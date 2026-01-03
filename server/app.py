@@ -25,7 +25,7 @@ CORS(app, resources={
             "http://127.0.0.1:8080"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization", "User-ID"]
     }
 })
 
@@ -191,6 +191,38 @@ def get_news():
         return jsonify(news_data), 200
     except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e), "message": "Failed to fetch news from API"}), 500
+
+
+@app.route('/api/mutual-funds', methods=['GET', 'OPTIONS'])
+def get_mutual_funds():
+    """Serve mutual funds data from the bundled CSV.
+
+    Query params:
+      - limit: number of rows to return (default 500, max 5000)
+    """
+
+    # Handle CORS preflight explicitly (Flask-CORS should also cover this)
+    if request.method == 'OPTIONS':
+        return ("", 204)
+
+    try:
+        limit_raw = request.args.get('limit', '500')
+        limit = int(limit_raw)
+        if limit <= 0:
+            limit = 500
+        limit = min(limit, 5000)
+
+        csv_path = os.path.join(os.path.dirname(__file__), 'mutual_funds.csv')
+        df = pd.read_csv(csv_path)
+        rows = df.head(limit).fillna("").to_dict(orient='records')
+        return jsonify({
+            "rows": rows,
+            "count": len(rows),
+        }), 200
+    except FileNotFoundError:
+        return jsonify({"error": "mutual_funds.csv not found"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Run the Flask application
 if __name__ == '__main__':

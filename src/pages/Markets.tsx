@@ -160,16 +160,16 @@ const Markets = () => {
             category: 'Markets',
             url: item.link || '#'
           })) : [];
-          setNews(transformedNews);
+          setNews(transformedNews.slice(0, 10));
         } else if (!cancelled) {
           // Fallback to mock data if API fails
-          setNews(newsItems);
+          setNews(newsItems.slice(0, 10));
         }
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to fetch news:', error);
           // Fallback to mock data
-          setNews(newsItems);
+          setNews(newsItems.slice(0, 10));
         }
       } finally {
         if (!cancelled) setNewsLoading(false);
