@@ -10,6 +10,11 @@ This repo is a 2-service app:
 - Permission to create RG/ACR/Container Apps in your subscription
 
 ## One-command deploy (PowerShell)
+0) Pick a region that your subscription allows.
+
+Some subscriptions (including Azure for Students) may block certain regions with an error like `RequestDisallowedByAzure`.
+If that happens, rerun the deploy script with a different `-Location` (examples to try: `centralus`, `eastus2`, `westeurope`, `southeastasia`).
+
 1) Set your subscription:
 
 `az account set --subscription "<SUBSCRIPTION_ID>"`

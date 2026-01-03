@@ -34,13 +34,20 @@ az group create -n $ResourceGroup -l $Location | Out-Null
 Write-Host "[2/8] Create ACR (if missing)" -ForegroundColor Yellow
 $acrExists = az acr show -g $ResourceGroup -n $AcrName 2>$null
 if (-not $?) {
-  az acr create -g $ResourceGroup -n $AcrName --sku Basic | Out-Null
+  az acr create -g $ResourceGroup -n $AcrName -l $Location --sku Basic | Out-Null
+  if (-not $?) {
+    throw "Failed to create ACR. Common causes: (1) RequestDisallowedByAzure = region restricted, try a different -Location; (2) MissingSubscriptionRegistration = provider not registered (Microsoft.ContainerRegistry). Try re-running after provider registration completes."
+  }
 }
+
+# Ensure admin credentials are enabled so we can pull from ACR (simple path; production can use Managed Identity + AcrPull)
+az acr update -n $AcrName --admin-enabled true | Out-Null
 
 Write-Host "[3/8] Ensure Container Apps extension/providers" -ForegroundColor Yellow
 az extension add --name containerapp --upgrade | Out-Null
 az provider register --namespace Microsoft.App | Out-Null
 az provider register --namespace Microsoft.OperationalInsights | Out-Null
+az provider register --namespace Microsoft.ContainerRegistry | Out-Null
 
 Write-Host "[4/8] Create Container Apps environment (if missing)" -ForegroundColor Yellow
 $envExists = az containerapp env show -g $ResourceGroup -n $EnvName 2>$null
