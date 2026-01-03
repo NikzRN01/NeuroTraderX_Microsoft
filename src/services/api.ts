@@ -2,7 +2,7 @@
 import { toast } from "sonner";
 
 // Base API URL - adjust this to match your Flask server
-const API_BASE_URL = "http://localhost:5000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 // Error handler helper function
 type ErrorWithResponse = {
