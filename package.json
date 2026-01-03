@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server:pycheck": "python -m py_compile server/app.py server/datafetch.py server/future.py server/insights.py server/risk.py server/tax_liability.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

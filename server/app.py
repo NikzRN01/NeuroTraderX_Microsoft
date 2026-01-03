@@ -186,6 +186,15 @@ def ai_chat():
 @app.route('/investment_strategy', methods=['POST'])
 def investment_strategy():
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON request body"}), 400
+
+    if not GEMINI_API_KEY:
+        return jsonify({"error": "GEMINI_API_KEY is not set"}), 500
+
+    if not GEMINI_ENDPOINT_URL:
+        return jsonify({"error": "GEMINI_ENDPOINT_URL is not set"}), 500
+
     user_id = data.get('user_id')
     user = User.query.get(user_id)
     
