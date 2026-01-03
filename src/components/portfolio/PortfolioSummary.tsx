@@ -5,8 +5,19 @@ import { ArrowUpRight, ArrowDownRight, Clock, Percent, DollarSign, BarChart3 } f
 import GlassCard from "@/components/ui/GlassCard";
 import LineChart from "@/components/ui/LineChart";
 
+interface PortfolioSummaryData {
+  totalValue: number;
+  totalGrowth: number;
+  totalGrowthPercentage: number;
+  investmentPeriod: string;
+  avgAnnualReturn: string;
+  totalInvested: number;
+  riskLevel: string;
+  chartData: { name: string; value: number }[];
+}
+
 interface PortfolioSummaryProps {
-  portfolioData: any;
+  portfolioData?: Partial<PortfolioSummaryData> | null;
 }
 
 const PortfolioSummary = ({ portfolioData }: PortfolioSummaryProps) => {

@@ -2,9 +2,10 @@
 import { motion } from "framer-motion";
 import AssetAllocation from "@/components/dashboard/AssetAllocation";
 import TopHoldings from "@/components/dashboard/TopHoldings";
+import type { PortfolioData } from "@/utils/mockData";
 
 interface AssetAllocationAndHoldingsProps {
-  portfolioData: any;
+  portfolioData: Partial<PortfolioData>;
 }
 
 const AssetAllocationAndHoldings = ({ portfolioData }: AssetAllocationAndHoldingsProps) => {

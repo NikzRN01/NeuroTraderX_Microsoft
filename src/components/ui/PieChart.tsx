@@ -1,6 +1,14 @@
 
 import { useState } from "react";
-import { PieChart as RechartsPercentagePieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import {
+  PieChart as RechartsPercentagePieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Legend,
+  Tooltip,
+  type TooltipProps,
+} from "recharts";
 
 interface PieChartProps {
   data: {
@@ -13,6 +21,15 @@ interface PieChartProps {
 
 const RADIAN = Math.PI / 180;
 
+type PieLabelProps = {
+  cx: number;
+  cy: number;
+  midAngle: number;
+  innerRadius: number;
+  outerRadius: number;
+  percent: number;
+};
+
 const renderCustomizedLabel = ({
   cx,
   cy,
@@ -20,7 +37,7 @@ const renderCustomizedLabel = ({
   innerRadius,
   outerRadius,
   percent,
-}: any) => {
+}: PieLabelProps) => {
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
   const y = cy + radius * Math.sin(-midAngle * RADIAN);
@@ -40,12 +57,14 @@ const renderCustomizedLabel = ({
   ) : null;
 };
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
   if (active && payload && payload.length) {
+    const rawValue = payload[0]?.value;
+    const value = typeof rawValue === "number" ? rawValue : Number(rawValue);
     return (
       <div className="glass-panel rounded p-2 text-xs shadow-md">
         <p className="mb-1 font-medium">{payload[0].name}</p>
-        <p className="text-primary">{`${payload[0].value}%`}</p>
+        <p className="text-primary">{`${value}%`}</p>
       </div>
     );
   }

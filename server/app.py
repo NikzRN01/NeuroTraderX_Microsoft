@@ -1,4 +1,3 @@
-import flask
 import os
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -106,7 +105,9 @@ def investment_strategy():
     
     # Sending a POST request to the Gemini API with the user's preferences
     try:
-        response = requests.post(GEMINI_ENDPOINT_URL, json=payload)
+        endpoint_url = os.getenv("GEMINI_ENDPOINT_URL", GEMINI_API_URL)
+        params = {"key": GEMINI_API_KEY} if GEMINI_API_KEY else None
+        response = requests.post(endpoint_url, json=payload, params=params)
         
         if response.status_code == 200:
             # Assuming the response contains the strategy

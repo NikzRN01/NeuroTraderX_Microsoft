@@ -1,14 +1,15 @@
+import os
+
 from flask import Flask, render_template, request, jsonify
 import yfinance as yf
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
 import requests
 
 app = Flask(__name__)
 
-# Gemini API Key
-GEMINI_API_KEY = "AIzaSyBba1JDsIFCYeuKXnne4QmllDRvGe64iJ4"
+# Gemini API Key (configure via environment variables)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0"  # Example endpoint
 
 # Fetch stock data using yfinance
@@ -37,14 +38,11 @@ def optimize_portfolio(mean_returns, cov_matrix, risk_free_rate=0.02):
 
 # AI-powered risk assessment using Gemini API
 def gemini_risk_assessment(portfolio_data):
+    if not GEMINI_API_KEY:
+        return {"error": "GEMINI_API_KEY environment variable is not set"}
     headers = {"Authorization": f"Bearer {GEMINI_API_KEY}"}
     response = requests.post(GEMINI_URL, json=portfolio_data, headers=headers)
     return response.json()
-
-
-# @app.route("/")
-# def home():
-#     return "Hello"
 @app.route("/")
 def index():
     return render_template("index.html")

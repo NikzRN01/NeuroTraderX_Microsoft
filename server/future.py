@@ -1,8 +1,6 @@
-from flask import Flask, render_template, request
+from flask import Flask
 import yfinance as yf
-import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
 from prophet import Prophet  # For time series forecasting
 import matplotlib.pyplot as plt
 import io
