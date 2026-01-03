@@ -51,7 +51,7 @@ const Dashboard = () => {
             category: 'Markets',
             url: item.link || '#'
           })) : [];
-          setNewsItems(transformedNews.slice(0, 10));
+          setNewsItems(transformedNews.slice(0, 5));
         }
       } catch (error) {
         if (!cancelled) {
@@ -128,7 +128,7 @@ const Dashboard = () => {
                 ) : (
                   <>
                     <div className="space-y-4">
-                      {newsItems.slice(0, 3).map((news) => (
+                      {newsItems.slice(0, 5).map((news) => (
                         <a 
                           key={news.id}
                           href={news.url || "#"}
@@ -151,12 +151,6 @@ const Dashboard = () => {
                           </button>
                         </a>
                       ))}
-                    </div>
-                    <div className="mt-3 text-center">
-                      <Link to="/news" className="text-sm text-primary flex items-center justify-center gap-1 w-full">
-                        <span>View more news</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </Link>
                     </div>
                   </>
                 )}

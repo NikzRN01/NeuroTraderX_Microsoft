@@ -12,7 +12,8 @@ import {
   X,
   MessageSquare,
   LogOut,
-  LogIn
+  LogIn,
+  Newspaper
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { insightRecommendations } from "@/utils/mockData";
@@ -55,6 +56,7 @@ const Navbar = () => {
     { path: "/markets", label: "Markets", icon: Globe },
     { path: "/insights", label: "Insights", icon: Lightbulb },
     { path: "/ai-chat", label: "AI Chat", icon: MessageSquare },
+    { path: "/news", label: "News", icon: Newspaper },
     { path: "/profile", label: "Profile", icon: User },
   ];
 
