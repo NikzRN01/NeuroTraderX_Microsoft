@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "@tanstack/react-query": "^5.69.0",
+    "framer-motion": "^12.5.0",
+    "react": "^19.0.0",
+    "react-router-dom": "^7.6.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.12",
+    "@types/react-router-dom": "^5.3.3"
+  }
+}
