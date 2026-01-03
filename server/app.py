@@ -5,12 +5,121 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import requests
 import pandas as pd
+import yfinance as yf
+import random
+import time
+import json
+from datetime import datetime, timedelta
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# In-memory cache for stock data
+stock_cache = {}
+CACHE_DURATION = 3600  # 1 hour in seconds
+
+# API Keys
+FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+
+def is_cache_valid(ticker):
+    """Check if cached data is still valid"""
+    if ticker not in stock_cache:
+        return False
+    cached = stock_cache[ticker]
+    age = time.time() - cached['timestamp']
+    return age < CACHE_DURATION
+
+def get_cached_data(ticker):
+    """Get data from cache if valid"""
+    if is_cache_valid(ticker):
+        print(f"DEBUG: Using cached data for {ticker}")
+        return stock_cache[ticker]['data']
+    return None
+
+def set_cache(ticker, data):
+    """Store data in cache with timestamp"""
+    stock_cache[ticker] = {
+        'data': data,
+        'timestamp': time.time()
+    }
+
+def fetch_from_finnhub(ticker):
+    """Fetch stock data from Finnhub API"""
+    if not FINNHUB_API_KEY:
+        print("DEBUG: Finnhub API key not configured")
+        return None
+    
+    try:
+        print(f"DEBUG: Fetching from Finnhub for {ticker}")
+        # Get quote data
+        quote_url = "https://finnhub.io/api/v1/quote"
+        quote_params = {
+            "symbol": ticker,
+            "token": FINNHUB_API_KEY
+        }
+        quote_response = requests.get(quote_url, params=quote_params, timeout=10)
+        quote_data = quote_response.json()
+        
+        if not quote_data.get('c'):  # 'c' is current price
+            print(f"DEBUG: No price data from Finnhub for {ticker}")
+            return None
+        
+        # Get company profile for additional info
+        profile_url = "https://finnhub.io/api/v1/stock/profile2"
+        profile_params = {
+            "symbol": ticker,
+            "token": FINNHUB_API_KEY
+        }
+        profile_response = requests.get(profile_url, params=profile_params, timeout=10)
+        profile_data = profile_response.json()
+        
+        last_price = quote_data.get('c', 0)
+        prev_close = quote_data.get('pc', last_price)
+        price_change = ((last_price - prev_close) / prev_close * 100) if prev_close else 0
+        
+        data = {
+            "source": "finnhub",
+            "symbol": ticker,
+            "lastPrice": round(last_price, 2),
+            "priceChange": round(price_change, 2),
+            "dayHigh": quote_data.get('h', 'N/A'),
+            "marketCap": profile_data.get('marketCapitalization', 'N/A'),
+            "summary": f"{ticker} trading at ${last_price:.2f}, {price_change:+.1f}% from previous close.",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        print(f"DEBUG: Successfully fetched from Finnhub for {ticker}")
+        return data
+        
+    except Exception as e:
+        print(f"DEBUG: Finnhub error for {ticker}: {str(e)}")
+        return None
+    """Create a requests session with retry strategy"""
+    session = requests.Session()
+    # Use minimal retries since Yahoo Finance is rate-limited
+    retries = Retry(total=1, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+    session.mount('http://', HTTPAdapter(max_retries=retries))
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+    return session
+
+def extract_ticker(query):
+    """Extract stock ticker from query (e.g., 'AAPL STOCK OUTLOOK' -> 'AAPL')"""
+    # Get first word and take only letters
+    words = query.split()
+    for word in words:
+        # Extract only alphabetic characters
+        ticker = ''.join(c for c in word if c.isalpha()).upper()
+        # Valid tickers are 1-5 characters
+        if 1 <= len(ticker) <= 5:
+            return ticker
+    # Fallback to first 5 letters if no valid word found
+    return ''.join(c for c in query if c.isalpha()).upper()[:5]
 
 # Enable CORS for all routes - allow Vite dev server and other origins
 default_origins = [
@@ -306,6 +415,201 @@ def get_mutual_funds():
         return jsonify({"error": "mutual_funds.csv not found"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/insights', methods=['POST'])
+def get_insights():
+    """Generate AI-powered stock insights with smart fallback chain"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '').strip().upper()
+        
+        if not query:
+            return jsonify({"error": "Query is required"}), 400
+        
+        # Extract just the ticker symbol
+        ticker = extract_ticker(query)
+        print(f"DEBUG: Original query: {query} -> Ticker: {ticker}")
+        
+        # Try to get cached data first
+        cached_data = get_cached_data(ticker)
+        if cached_data:
+            ai_analysis = generate_stock_analysis(ticker, cached_data['lastPrice'], cached_data['priceChange'], cached_data.get('dayHigh', 'N/A'))
+            response_data = {**cached_data, **ai_analysis}
+            response_data['dataSource'] = 'cached'
+            return jsonify(response_data), 200
+        
+        # Try Yahoo Finance
+        try:
+            session = create_yfinance_session()
+            stock = yf.Ticker(ticker, session=session)
+            hist = stock.history(period="5d")
+            
+            if hist.empty:
+                time.sleep(0.5)
+                hist = stock.history(period="1d")
+            
+            if not hist.empty:
+                last_price = hist['Close'].iloc[-1]
+                price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0] * 100) if len(hist) > 1 else 0
+                avg_volume = hist['Volume'].mean()
+                
+                try:
+                    info = stock.info
+                    # Use day high; more reliably available than 52-week high
+                    day_high = info.get('dayHigh', 'N/A')
+                    if day_high != 'N/A' and isinstance(day_high, (int, float)):
+                        day_high = round(day_high, 2)
+                    market_cap = info.get('marketCap', 'N/A')
+                except:
+                    day_high = 'N/A'
+                    market_cap = 'N/A'
+                
+                period_text = f"{len(hist)} day(s)" if len(hist) > 0 else "recent period"
+                summary = f"{ticker} is trading at ${last_price:.2f} with a {price_change:.1f}% change over the {period_text}. Today's high: ${day_high}."
+                
+                ai_analysis = generate_stock_analysis(ticker, last_price, price_change, day_high)
+                
+                response_data = {
+                    "symbol": ticker,
+                    "lastPrice": round(last_price, 2),
+                    "priceChange": round(price_change, 2),
+                    "dayHigh": day_high,
+                    "marketCap": market_cap,
+                    "summary": summary,
+                    "dataSource": "yahoo_finance",
+                    **ai_analysis
+                }
+                
+                # Cache successful Yahoo Finance result
+                set_cache(ticker, response_data)
+                return jsonify(response_data), 200
+        
+        except Exception as yf_err:
+            print(f"DEBUG: Yahoo Finance error: {str(yf_err)}")
+        
+        # Try Finnhub as fallback
+        finnhub_data = fetch_from_finnhub(ticker)
+        if finnhub_data:
+            ai_analysis = generate_stock_analysis(ticker, finnhub_data['lastPrice'], finnhub_data['priceChange'], finnhub_data.get('dayHigh', 'N/A'))
+            response_data = {**finnhub_data, **ai_analysis}
+            # Cache Finnhub result
+            set_cache(ticker, response_data)
+            return jsonify(response_data), 200
+        
+        # Last resort: mock data
+        print(f"DEBUG: Using mock data for {ticker}")
+        mock_data = get_mock_stock_data(ticker)
+        mock_data['dataSource'] = 'mock'
+        return jsonify(mock_data), 200
+    
+    except Exception as e:
+        print(f"DEBUG: Exception in get_insights: {str(e)}")
+        return jsonify({"error": "Failed to generate insights"}), 500
+
+def generate_stock_analysis(symbol, price, price_change, metric_value):
+    """Generate AI-powered stock analysis with fallback"""
+    try:
+        if not OPENROUTER_API_KEY:
+            return get_mock_analysis(symbol, price_change)
+        
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "NeuroTradeX"
+        }
+        
+        prompt = f"""Analyze {symbol} with current price ${price} and 60-day change of {price_change:.1f}%. 
+        Today's high: ${metric_value}. Provide a concise 1-sentence prediction and recommendation. 
+        Respond in JSON format with keys: prediction, recommendation, riskLevel (Low/Medium/High), confidence (0-100)."""
+        
+        payload = {
+            "model": "openai/gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a stock analyst. Respond ONLY with valid JSON, no markdown or extra text."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "max_tokens": 200
+        }
+        
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", 
+                               headers=headers, json=payload, timeout=15)
+        
+        if response.status_code == 200:
+            result = response.json()
+            ai_text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+            
+            # Try to parse JSON from response
+            try:
+                import json
+                analysis = json.loads(ai_text)
+                return {
+                    "prediction": analysis.get("prediction", "Positive outlook based on technical indicators"),
+                    "recommendation": analysis.get("recommendation", "Hold current position"),
+                    "riskLevel": analysis.get("riskLevel", "Medium"),
+                    "confidence": analysis.get("confidence", 65)
+                }
+            except:
+                pass
+        
+        return get_mock_analysis(symbol, price_change)
+    
+    except Exception as e:
+        print(f"DEBUG: AI analysis error: {str(e)}")
+        return get_mock_analysis(symbol, price_change)
+
+def get_mock_analysis(symbol, price_change):
+    """Fallback mock analysis"""
+    analyses = [
+        {"prediction": f"{symbol} likely to continue upward trend in near term", "recommendation": "Consider buying on dips", "riskLevel": "Low", "confidence": 72},
+        {"prediction": f"Mixed signals for {symbol}, potential consolidation phase", "recommendation": "Hold current positions", "riskLevel": "Medium", "confidence": 58},
+        {"prediction": f"{symbol} showing strong fundamentals despite market volatility", "recommendation": "Consider increasing position", "riskLevel": "Medium", "confidence": 68},
+    ]
+    return random.choice(analyses)
+
+def get_mock_stock_data(symbol):
+    """Generate mock stock data when yfinance is unavailable"""
+    # Common stock price ranges
+    price_ranges = {
+        "AAPL": (150, 200),
+        "GOOGL": (130, 180),
+        "MSFT": (350, 450),
+        "TSLA": (200, 300),
+        "AMZN": (140, 190),
+        "NVDA": (400, 600),
+        "META": (300, 500),
+    }
+    
+    # Get price range or use default
+    price_min, price_max = price_ranges.get(symbol, (50, 150))
+    last_price = random.uniform(price_min, price_max)
+    price_change = random.uniform(-8, 12)
+    pe_ratio = random.uniform(15, 35)
+    market_cap = random.randint(500, 3000) * 1000000000  # $500B - $3T
+    
+    summary = f"{symbol} has shown a {price_change:.1f}% change over the last 60 days. Current P/E ratio is {pe_ratio:.2f}. (Mock data due to rate limiting)"
+    
+    # Get AI analysis
+    ai_analysis = generate_stock_analysis(symbol, last_price, price_change, round(last_price * 1.02, 2))
+    
+    return {
+        "symbol": symbol,
+        "lastPrice": round(last_price, 2),
+        "priceChange": round(price_change, 2),
+        "dayHigh": round(last_price * 1.02, 2),
+        "marketCap": market_cap,
+        "summary": summary,
+        "prediction": ai_analysis["prediction"],
+        "recommendation": ai_analysis["recommendation"],
+        "riskLevel": ai_analysis["riskLevel"],
+        "confidence": ai_analysis["confidence"]
+    }
 
 # Run the Flask application
 if __name__ == '__main__':
