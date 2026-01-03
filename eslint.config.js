@@ -26,4 +26,16 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   }
+  ,
+  {
+    files: [
+      "src/components/ui/button.tsx",
+      "src/components/ui/toggle.tsx",
+      "src/components/ui/sidebar.tsx",
+      "src/providers/ThemeProvider.tsx",
+    ],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  }
 );

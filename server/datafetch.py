@@ -1,7 +1,5 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask
 import yfinance as yf
-# import ccxt
-import pandas as pd
 import requests
 
 app = Flask(__name__)
@@ -26,10 +24,14 @@ def fetch_stock_data(symbol, exchange="NSE"):
 
 # Function to fetch cryptocurrency data
 def fetch_crypto_data(symbol):
+    try:
+        import ccxt  # type: ignore
+    except ImportError:
+        return {"error": "ccxt is not installed"}
+
     exchange = ccxt.binance()
     ticker = symbol + "/USDT"  # Fetch against USDT
-    data = exchange.fetch_ticker(ticker)
-    return data
+    return exchange.fetch_ticker(ticker)
 
 # Function to fetch commodity data
 def fetch_commodity_data(ticker):
