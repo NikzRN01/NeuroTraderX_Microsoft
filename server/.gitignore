@@ -145,3 +145,4 @@ Thumbs.db
 
 # Node modules (if any Node.js dependencies)
 node_modules/
+.env
