@@ -4,6 +4,10 @@ FROM oven/bun:1 AS build
 
 WORKDIR /app
 
+# Build-time config for the frontend (Vite reads VITE_* at build time)
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 # Install dependencies (cached layer)
 COPY package.json bun.lockb ./
 RUN bun install
