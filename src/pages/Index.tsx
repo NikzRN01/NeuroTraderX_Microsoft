@@ -1,4 +1,5 @@
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import PortfolioOverview from "@/components/dashboard/PortfolioOverview";
@@ -6,10 +7,68 @@ import AssetAllocation from "@/components/dashboard/AssetAllocation";
 import TopHoldings from "@/components/dashboard/TopHoldings";
 import MarketTrends from "@/components/dashboard/MarketTrends";
 import GlassCard from "@/components/ui/GlassCard";
-import { newsItems, insightRecommendations } from "@/utils/mockData";
-import { ArrowRight, TrendingUp, ShieldCheck } from "lucide-react";
+import {insightRecommendations } from "@/utils/mockData";
+import { newsApi } from "@/services/api"; 
+import { ArrowRight, TrendingUp, ShieldCheck, Loader2 } from "lucide-react";
+
+interface NewsItem {
+  id: number;
+  title: string;
+  description?: string;
+  source: string;
+  time: string;
+  category: string;
+  url?: string;
+}
 
 const Dashboard = () => {
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const [newsError, setNewsError] = useState<string | null>(null);
+
+  // Fetch news from backend
+  useEffect(() => {
+    let cancelled = false;
+    
+    const loadNews = async () => {
+      setNewsLoading(true);
+      try {
+        const data = await newsApi.fetchNews();
+        if (!cancelled && data) {
+          // API returns { body: [...], meta: {...} }
+          const newsArray = data.body || data;
+          const transformedNews = Array.isArray(newsArray) ? newsArray.map((item: any, index: number) => ({
+            id: index + 1,
+            title: item.title || 'No title',
+            description: item.description || '',
+            source: 'Yahoo Finance', // API doesn't provide source, using default
+            time: item.pubDate ? new Date(item.pubDate).toLocaleString('en-US', { 
+              month: 'short', 
+              day: 'numeric', 
+              hour: 'numeric', 
+              minute: '2-digit' 
+            }) : 'Recently',
+            category: 'Markets',
+            url: item.link || '#'
+          })) : [];
+          setNewsItems(transformedNews.slice(0, 5));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to fetch news:', error);
+          setNewsError('Failed to load news');
+        }
+      } finally {
+        if (!cancelled) setNewsLoading(false);
+      } 
+    };
+    
+    void loadNews();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Animation variants for staggered animations
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -20,7 +79,7 @@ const Dashboard = () => {
       }
     }
   };
-
+  
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0, transition: { duration: 0.4 } }
@@ -51,19 +110,29 @@ const Dashboard = () => {
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2">
-              <GlassCard title="Latest Financial News">
+          <GlassCard title="Latest Financial News">
+            {newsLoading ? (
+              <div className="flex justify-center items-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : newsError ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>{newsError}</p>
+              </div>
+            ) : newsItems.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No news available</p>
+              </div>
+            ) : (
+              <>
                 <div className="space-y-4">
-                  {newsItems.slice(0, 3).map((news) => (
+                  {newsItems.slice(0, 5).map((news) => (
                     <a 
                       key={news.id}
-                      href="#" 
+                      href={news.url || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="flex justify-between items-start border-b border-border/30 pb-3 last:border-0 last:pb-0 hover:bg-secondary/20 p-2 rounded-lg transition-colors"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        window.open('https://finance.yahoo.com', '_blank');
-                      }}
                     >
                       <div>
                         <h4 className="text-sm font-medium">{news.title}</h4>
@@ -81,47 +150,9 @@ const Dashboard = () => {
                     </a>
                   ))}
                 </div>
-                <div className="mt-3 text-center">
-                  <Link to="/news" className="text-sm text-primary flex items-center justify-center gap-1 w-full">
-                    <span>View more news</span>
-                    <ArrowRight className="h-3 w-3" />
-                  </Link>
-                </div>
-              </GlassCard>
-            </div>
-
-            <div>
-              <GlassCard title="AI Recommendations">
-                <div className="space-y-3">
-                  {insightRecommendations.map((rec) => (
-                    <div key={rec.id} className="glass-panel rounded-lg p-3">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="text-sm font-medium">{rec.title}</h4>
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${
-                          rec.impact === 'High' ? 'bg-red-500/20 text-red-400' : 
-                          rec.impact === 'Medium' ? 'bg-amber-500/20 text-amber-400' : 
-                          'bg-blue-500/20 text-blue-400'
-                        }`}>
-                          {rec.impact}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-2">{rec.description}</p>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs bg-secondary px-1.5 py-0.5 rounded">{rec.type}</span>
-                        <Link 
-                          to={`/ai-recommendation/${rec.id}`} 
-                          className="text-primary text-xs flex items-center gap-1"
-                        >
-                          <span>Take action</span>
-                          <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-            </div>
-          </div>
+              </>
+            )}
+          </GlassCard>
         </motion.div>
 
         <motion.div variants={itemVariants}>

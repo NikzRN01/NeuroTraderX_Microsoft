@@ -122,19 +122,26 @@ def extract_ticker(query):
     return ''.join(c for c in query if c.isalpha()).upper()[:5]
 
 # Enable CORS for all routes - allow Vite dev server and other origins
+default_origins = [
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "http://127.0.0.1:8080",
+]
+
+# Optionally extend allowed origins (comma-separated) for deployed environments.
+# Example: CORS_ALLOWED_ORIGINS=https://my-frontend.azurecontainerapps.io
+extra_origins_raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+extra_origins = [o.strip() for o in extra_origins_raw.split(",") if o.strip()]
+
 CORS(app, resources={
     r"/*": {
-        "origins": [
-            "http://localhost:5173", 
-            "http://localhost:4173", 
-            "http://127.0.0.1:5173", 
-            "http://127.0.0.1:4173",
-            "http://localhost:8080", 
-            "http://localhost:3000", 
-            "http://127.0.0.1:8080"
-        ],
+        "origins": [*default_origins, *extra_origins],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "User-ID"]
+        "allow_headers": ["Content-Type", "Authorization", "User-ID"],
     }
 })
 

@@ -1,0 +1,20 @@
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      # Optional: set these in your shell or a .env file and Compose will pick them up.
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - STEADY_API_TOKEN=${STEADY_API_TOKEN:-}
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4173:4173"
+    depends_on:
+      - backend

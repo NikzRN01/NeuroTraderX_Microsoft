@@ -16,7 +16,6 @@ import AiChat from "./pages/AiChat";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import NewsPage from "./pages/NewsPage";
-import AiRecommendation from "./pages/AiRecommendation";
 import TaxOptimization from "./pages/TaxOptimization";
 import Landing from "./pages/Landing";
 import SignIn from "./pages/SignIn";
@@ -29,15 +28,15 @@ const queryClient = new QueryClient();
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const isAuthenticated = localStorage.getItem("authenticated") === "true";
   const isNewUser = localStorage.getItem("isNewUser") === "true";
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/landing" replace />;
   }
-  
+
   if (isAuthenticated && isNewUser) {
     return <Navigate to="/onboarding" replace />;
   }
-  
+
   return children;
 };
 
@@ -45,22 +44,22 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 const PublicRoute = ({ children }: { children: JSX.Element }) => {
   const isAuthenticated = localStorage.getItem("authenticated") === "true";
   const isNewUser = localStorage.getItem("isNewUser") === "true";
-  
+
   if (isAuthenticated && !isNewUser) {
     return <Navigate to="/" replace />;
   }
-  
+
   return children;
 };
 
 const App = () => {
   const [isAppReady, setIsAppReady] = useState(false);
-  
+
   useEffect(() => {
     // This ensures localStorage is available before rendering routes
     setIsAppReady(true);
   }, []);
-  
+
   if (!isAppReady) {
     return null; // Or a loading spinner
   }
@@ -74,40 +73,40 @@ const App = () => {
           <AnimatePresence mode="wait">
             <Routes>
               {/* Public Routes */}
-              <Route 
-                path="/landing" 
+              <Route
+                path="/landing"
                 element={
                   <PublicRoute>
                     <Landing />
                   </PublicRoute>
-                } 
+                }
               />
-              <Route 
-                path="/signin" 
+              <Route
+                path="/signin"
                 element={
                   <PublicRoute>
                     <SignIn />
                   </PublicRoute>
-                } 
+                }
               />
-              <Route 
-                path="/signup" 
+              <Route
+                path="/signup"
                 element={
                   <PublicRoute>
                     <SignUp />
                   </PublicRoute>
-                } 
+                }
               />
-              <Route 
-                path="/onboarding" 
+              <Route
+                path="/onboarding"
                 element={
                   <Onboarding />
-                } 
+                }
               />
-              
+
               {/* Protected Routes with Navbar and Footer */}
-              <Route 
-                path="/" 
+              <Route
+                path="/"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -120,8 +119,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/portfolio" 
+              <Route
+                path="/portfolio"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -134,8 +133,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/markets" 
+              <Route
+                path="/markets"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -148,8 +147,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/insights" 
+              <Route
+                path="/insights"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -162,8 +161,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/ai-chat" 
+              <Route
+                path="/ai-chat"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -176,8 +175,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/profile" 
+              <Route
+                path="/profile"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -190,8 +189,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/news" 
+              <Route
+                path="/news"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -204,22 +203,8 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              <Route 
-                path="/ai-recommendation/:id" 
-                element={
-                  <ProtectedRoute>
-                    <div className="min-h-screen bg-background flex flex-col">
-                      <Navbar />
-                      <div className="flex-1">
-                        <AiRecommendation />
-                      </div>
-                      <Footer />
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              <Route 
-                path="/tax-optimization" 
+              <Route
+                path="/tax-optimization"
                 element={
                   <ProtectedRoute>
                     <div className="min-h-screen bg-background flex flex-col">
@@ -232,10 +217,10 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
-              
+
               {/* Catch-all route */}
-              <Route 
-                path="*" 
+              <Route
+                path="*"
                 element={
                   <div className="min-h-screen bg-background flex flex-col">
                     <Navbar />
@@ -244,7 +229,7 @@ const App = () => {
                     </div>
                     <Footer />
                   </div>
-                } 
+                }
               />
             </Routes>
           </AnimatePresence>
