@@ -108,6 +108,16 @@ def fetch_from_finnhub(ticker):
     session.mount('https://', HTTPAdapter(max_retries=retries))
     return session
 
+
+def create_yfinance_session():
+    """Session helper for yfinance with light retry"""
+    session = requests.Session()
+    retries = Retry(total=1, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
 def extract_ticker(query):
     """Extract stock ticker from query (e.g., 'AAPL STOCK OUTLOOK' -> 'AAPL')"""
     # Get first word and take only letters
@@ -518,10 +528,17 @@ def generate_stock_analysis(symbol, price, price_change, metric_value):
             "HTTP-Referer": "http://localhost:8080",
             "X-Title": "NeuroTradeX"
         }
-        
-        prompt = f"""Analyze {symbol} with current price ${price} and 60-day change of {price_change:.1f}%. 
-        Today's high: ${metric_value}. Provide a concise 1-sentence prediction and recommendation. 
-        Respond in JSON format with keys: prediction, recommendation, riskLevel (Low/Medium/High), confidence (0-100)."""
+
+        prompt = f"""
+You are an equity analyst. Inputs: symbol {symbol}, last price ${price:.2f}, 60-day change {price_change:.1f}%, today's high {metric_value}.
+Output JSON only (no prose, no markdown):
+{{
+  "prediction": "<=25 words, short-term (2-8 week) directional view with magnitude or range if possible",
+  "recommendation": "Buy|Hold|Sell - <=25 words with risk caveat and trigger/stop hints",
+  "riskLevel": "Low|Medium|High based on recent swing/volatility; avoid other labels",
+  "confidence": 40-90 integer
+}}
+Keep it practical and realistic for a general investor (not a trader)."""
         
         payload = {
             "model": "openai/gpt-3.5-turbo",
@@ -565,13 +582,40 @@ def generate_stock_analysis(symbol, price, price_change, metric_value):
         return get_mock_analysis(symbol, price_change)
 
 def get_mock_analysis(symbol, price_change):
-    """Fallback mock analysis"""
-    analyses = [
-        {"prediction": f"{symbol} likely to continue upward trend in near term", "recommendation": "Consider buying on dips", "riskLevel": "Low", "confidence": 72},
-        {"prediction": f"Mixed signals for {symbol}, potential consolidation phase", "recommendation": "Hold current positions", "riskLevel": "Medium", "confidence": 58},
-        {"prediction": f"{symbol} showing strong fundamentals despite market volatility", "recommendation": "Consider increasing position", "riskLevel": "Medium", "confidence": 68},
-    ]
-    return random.choice(analyses)
+    """Fallback mock analysis tuned to recent move"""
+    abs_change = abs(price_change)
+    if abs_change >= 10:
+        risk = "High"
+    elif abs_change >= 4:
+        risk = "Medium"
+    else:
+        risk = "Low"
+
+    if price_change >= 5:
+        prediction = f"{symbol} momentum is firm; modest upside likely over the next month"
+        recommendation = "Buy - add on small pullbacks; use stops to protect gains"
+        confidence = 68
+    elif price_change <= -5:
+        prediction = f"{symbol} under pressure; further drift lower is possible near term"
+        recommendation = "Sell - trim exposure and wait for basing before re-entering"
+        confidence = 62
+    else:
+        prediction = f"{symbol} likely to trade sideways in the short term"
+        recommendation = "Hold - keep size steady until a clearer trend forms"
+        confidence = 60
+
+    # Nudge confidence toward risk profile
+    if risk == "High":
+        confidence = max(50, confidence - 5)
+    elif risk == "Low":
+        confidence = min(75, confidence + 4)
+
+    return {
+        "prediction": prediction,
+        "recommendation": recommendation,
+        "riskLevel": risk,
+        "confidence": confidence
+    }
 
 def get_mock_stock_data(symbol):
     """Generate mock stock data when yfinance is unavailable"""
