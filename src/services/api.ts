@@ -175,6 +175,23 @@ export const insightsApi = {
       method: "POST",
       body: JSON.stringify({ symbols, intervals }),
     }),
+  
+  getSymbolInsights: (query: string) =>
+    fetchWithErrorHandling<{
+      symbol: string;
+      lastPrice: number;
+      priceChange: number;
+      peRatio: number | string;
+      marketCap: number | string;
+      summary: string;
+      prediction: string;
+      recommendation: string;
+      riskLevel: "Low" | "Medium" | "High";
+      confidence: number;
+    }>("/api/insights", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
 };
 
 // AI Chat API
