@@ -12,6 +12,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')  
+GEMINI_ENDPOINT_URL = os.getenv("GEMINI_ENDPOINT_URL")
 
 # Models
 class User(db.Model):
@@ -90,6 +91,15 @@ def home():
 @app.route('/investment_strategy', methods=['POST'])
 def investment_strategy():
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON request body"}), 400
+
+    if not GEMINI_API_KEY:
+        return jsonify({"error": "GEMINI_API_KEY is not set"}), 500
+
+    if not GEMINI_ENDPOINT_URL:
+        return jsonify({"error": "GEMINI_ENDPOINT_URL is not set"}), 500
+
     user_id = data.get('user_id')
     user = User.query.get(user_id)
     
@@ -105,9 +115,12 @@ def investment_strategy():
     
     # Sending a POST request to the Gemini API with the user's preferences
     try:
-        endpoint_url = os.getenv("GEMINI_ENDPOINT_URL", GEMINI_API_URL)
-        params = {"key": GEMINI_API_KEY} if GEMINI_API_KEY else None
-        response = requests.post(endpoint_url, json=payload, params=params)
+        response = requests.post(
+            GEMINI_ENDPOINT_URL,
+            json=payload,
+            params={"key": GEMINI_API_KEY},
+            timeout=30,
+        )
         
         if response.status_code == 200:
             # Assuming the response contains the strategy
