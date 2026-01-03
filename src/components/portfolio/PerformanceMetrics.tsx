@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
 
 interface PerformanceMetricsProps {
-  portfolioData?: any;
+  portfolioData?: unknown;
 }
 
 const PerformanceMetrics = ({ portfolioData }: PerformanceMetricsProps) => {

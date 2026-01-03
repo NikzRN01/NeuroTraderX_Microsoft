@@ -24,9 +24,17 @@ const portfolioItemSchema = z.object({
 
 type PortfolioItem = z.infer<typeof portfolioItemSchema>;
 
+interface TaxSummary {
+  short_term_gains: number;
+  long_term_gains: number;
+  stt_tax: number;
+  ltcg_tax: number;
+  total_tax: number;
+}
+
 const TaxOptimization = () => {
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
-  const [taxSummary, setTaxSummary] = useState<any>(null);
+  const [taxSummary, setTaxSummary] = useState<TaxSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Set up form with validation

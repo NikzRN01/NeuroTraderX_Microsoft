@@ -2,14 +2,16 @@
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 import { mockPortfolioData } from "@/utils/mockData";
+import type { PortfolioData } from "@/utils/mockData";
 
 interface TopHoldingsProps {
-  portfolioData?: any;
+  portfolioData?: Partial<PortfolioData>;
 }
 
 const TopHoldings = ({ portfolioData }: TopHoldingsProps) => {
   // Use provided portfolioData or fallback to mockData
-  const holdings = portfolioData?.topHoldings || mockPortfolioData.topHoldings;
+  const holdings: PortfolioData["topHoldings"] =
+    portfolioData?.topHoldings ?? mockPortfolioData.topHoldings;
   
   return (
     <GlassCard title="Top Holdings" className="h-full">

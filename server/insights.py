@@ -1,4 +1,6 @@
-from flask import Flask, render_template, request
+import os
+
+from flask import Flask
 import yfinance as yf
 import pandas as pd
 import requests
@@ -10,7 +12,7 @@ import base64
 app = Flask(__name__)
 
 # Gemini API configuration
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"  # Replace with your Gemini API key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_URL = "https://api.gemini.com/v1/insights"  # Replace with the actual Gemini API endpoint
 
 # Function to categorize beta
@@ -37,6 +39,8 @@ def format_market_cap(market_cap):
 
 # Function to generate AI-based insights using Gemini API
 def generate_ai_insights(symbol, prices):
+    if not GEMINI_API_KEY:
+        return "Error generating insights: GEMINI_API_KEY environment variable is not set"
     # Prepare the payload for the Gemini API
     payload = {
         "symbol": symbol,

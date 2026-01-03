@@ -1,6 +1,15 @@
 
 import { useState, useEffect } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  type TooltipProps,
+} from "recharts";
 
 interface LineChartProps {
   data: { name: string; value: number }[];
@@ -8,13 +17,15 @@ interface LineChartProps {
   showTimeFrames?: boolean;
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
   if (active && payload && payload.length) {
+    const rawValue = payload[0]?.value;
+    const value = typeof rawValue === "number" ? rawValue : Number(rawValue);
     return (
       <div className="glass-panel rounded p-2 text-xs shadow-md">
         <p className="mb-1 font-medium">{label}</p>
         <p className="text-primary">
-          ${payload[0].value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          ${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
         </p>
       </div>
     );

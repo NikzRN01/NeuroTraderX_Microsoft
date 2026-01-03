@@ -2,15 +2,17 @@
 import GlassCard from "@/components/ui/GlassCard";
 import PieChart from "@/components/ui/PieChart";
 import { mockPortfolioData } from "@/utils/mockData";
+import type { PortfolioData } from "@/utils/mockData";
 import { motion } from "framer-motion";
 
 interface AssetAllocationProps {
-  portfolioData?: any;
+  portfolioData?: Partial<PortfolioData>;
 }
 
 const AssetAllocation = ({ portfolioData }: AssetAllocationProps) => {
   // Use provided portfolioData or fallback to mockData
-  const data = portfolioData?.assetAllocation || mockPortfolioData.assetAllocation;
+  const data: PortfolioData["assetAllocation"] =
+    portfolioData?.assetAllocation ?? mockPortfolioData.assetAllocation;
   
   return (
     <GlassCard title="Asset Allocation" className="h-full relative overflow-hidden">

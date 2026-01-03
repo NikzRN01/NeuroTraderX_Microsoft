@@ -5,9 +5,19 @@ import { toast } from "sonner";
 const API_BASE_URL = "http://localhost:5000";
 
 // Error handler helper function
-const handleError = (error: any) => {
+type ErrorWithResponse = {
+  response?: {
+    data?: {
+      error?: string;
+    };
+  };
+};
+
+const handleError = (error: unknown): never => {
   console.error("API Error:", error);
-  const errorMessage = error?.response?.data?.error || "An unexpected error occurred";
+  const errorMessage =
+    (error as ErrorWithResponse)?.response?.data?.error ||
+    (error instanceof Error ? error.message : "An unexpected error occurred");
   toast.error(errorMessage);
   throw error;
 };
@@ -50,7 +60,7 @@ export const authApi = {
       body: JSON.stringify({ username, password }),
     }),
     
-  updatePreferences: (userId: number, preferences: any) =>
+  updatePreferences: (userId: number, preferences: Record<string, unknown>) =>
     fetchWithErrorHandling("/update_preferences", {
       method: "POST",
       body: JSON.stringify({ user_id: userId, ...preferences }),
@@ -79,7 +89,7 @@ export const portfolioApi = {
       }
     }),
     
-  uploadPortfolio: (userId: number, portfolioData: any) =>
+  uploadPortfolio: (userId: number, portfolioData: unknown) =>
     fetchWithErrorHandling("/portfolio", {
       method: "POST",
       body: JSON.stringify({ 
@@ -91,7 +101,7 @@ export const portfolioApi = {
 
 // Tax Liability API
 export const taxApi = {
-  calculateTaxLiability: (portfolio: any[]) =>
+  calculateTaxLiability: (portfolio: unknown[]) =>
     fetchWithErrorHandling("/api/submit_portfolio", {
       method: "POST",
       body: JSON.stringify({ portfolio }),

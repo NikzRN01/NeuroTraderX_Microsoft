@@ -7,7 +7,9 @@ import requests
 app = Flask(__name__)
 
 # Gemini API configuration
-GEMINI_API_KEY = "your_gemini_api_key"
+import os
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_URL = "https://api.gemini.com/v1/insights"  # Example endpoint
 
 # Function to fetch NSE/BSE stock data
@@ -37,6 +39,8 @@ def fetch_commodity_data(ticker):
 
 # Function to generate AI-based insights using Gemini API
 def generate_ai_insights(data):
+    if not GEMINI_API_KEY:
+        return "Error generating insights: GEMINI_API_KEY environment variable is not set"
     headers = {"Authorization": f"Bearer {GEMINI_API_KEY}"}
     payload = {"data": data}
     try:
@@ -51,57 +55,6 @@ def generate_ai_insights(data):
 @app.route("/")
 def home():
     return "Hello"
-# @app.route("/")
-# def index():
-#     return render_template("index.html")
-
-# @app.route("/fetch_data", methods=["POST"])
-# def fetch_data():
-#     market_type = request.form.get("market_type")
-#     symbol = request.form.get("symbol")
-#     exchange = request.form.get("exchange", "NSE")
-
-#     if market_type == "stock":
-#         data = fetch_stock_data(symbol, exchange)
-#         if data is None:
-#             return jsonify({"error": "Invalid symbol or exchange."})
-#         latest_data = {
-#             "symbol": symbol,
-#             "exchange": exchange,
-#             "last_price": data['Close'].iloc[-1],
-#             "change": data['Close'].iloc[-1] - data['Open'].iloc[0],
-#             "volume": data['Volume'].iloc[-1]
-#         }
-#     elif market_type == "crypto":
-#         data = fetch_crypto_data(symbol)
-#         latest_data = {
-#             "symbol": symbol,
-#             "last_price": data["last"],
-#             "change": data["last"] - data["open"],
-#             "volume": data["quoteVolume"]
-#         }
-#     elif market_type == "commodity":
-#         data = fetch_commodity_data(symbol)
-#         latest_data = {
-#             "symbol": symbol,
-#             "last_price": data['Close'].iloc[-1],
-#             "change": data['Close'].iloc[-1] - data['Open'].iloc[0],
-#             "volume": data['Volume'].iloc[-1]
-#         }
-#     else:
-#         return jsonify({"error": "Invalid market type."})
-
-#     # Generate AI-based insights
-#     ai_insight = generate_ai_insights(latest_data)
-
-#     # Return results
-#     results = {
-#         "market_type": market_type,
-#         "symbol": symbol,
-#         "data": latest_data,
-#         "ai_insight": ai_insight
-#     }
-#     return jsonify(results)
 
 if __name__ == "__main__":
     app.run(debug=True)

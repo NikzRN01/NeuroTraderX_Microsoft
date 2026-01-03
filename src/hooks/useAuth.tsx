@@ -61,7 +61,7 @@ export function useAuth() {
     navigate("/landing");
   };
 
-  const updateUserPreferences = async (preferences: any) => {
+  const updateUserPreferences = async (preferences: Record<string, unknown>) => {
     setIsLoading(true);
     try {
       const userId = localStorage.getItem("userId");

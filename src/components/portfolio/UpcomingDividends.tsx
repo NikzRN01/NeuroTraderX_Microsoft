@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
 
 interface UpcomingDividendsProps {
-  portfolioData?: any;
+  portfolioData?: unknown;
 }
 
 const UpcomingDividends = ({ portfolioData }: UpcomingDividendsProps) => {
