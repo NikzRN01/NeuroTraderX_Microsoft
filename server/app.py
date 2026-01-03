@@ -112,26 +112,23 @@ MOCK_AI_RESPONSES = [
 
 @app.route('/api/chat', methods=['POST'])
 def ai_chat():
-    """Chat with Gemini AI for investment advice"""
-    data = request.get_json()
-    user_message = data.get('message')
-    
-    if not user_message:
-        return jsonify({"error": "Message is required"}), 400
-    
-    # Debug: print API key status
-    print(f"DEBUG: OPENROUTER_API_KEY is set: {bool(OPENROUTER_API_KEY)}")
-    print(f"DEBUG: OPENROUTER_API_KEY value: {OPENROUTER_API_KEY[:30] if OPENROUTER_API_KEY else 'None'}...")
-    
-    # Use mock response if OpenRouter API is not available
-    if not OPENROUTER_API_KEY:
-        import random
-        print("DEBUG: No API key, using mock response")
-        mock_response = random.choice(MOCK_AI_RESPONSES)
-        return jsonify({"response": mock_response}), 200
-    
+    """Chat with OpenRouter AI for investment advice"""
     try:
-        # Call OpenRouter API (compatible with multiple models including Gemini)
+        data = request.get_json()
+        user_message = data.get('message') if data else None
+        
+        if not user_message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        print(f"DEBUG: Received message: {user_message[:50]}...")
+        print(f"DEBUG: OPENROUTER_API_KEY is set: {bool(OPENROUTER_API_KEY)}")
+        
+        if not OPENROUTER_API_KEY:
+            print("DEBUG: No API key, using mock response")
+            import random
+            mock_response = random.choice(MOCK_AI_RESPONSES)
+            return jsonify({"response": mock_response}), 200
+        
         openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
         
         headers = {
@@ -156,44 +153,35 @@ def ai_chat():
             "max_tokens": 500
         }
         
+        print("DEBUG: Sending request to OpenRouter...")
         response = requests.post(openrouter_url, json=payload, headers=headers, timeout=30)
+        print(f"DEBUG: OpenRouter response status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            # Extract the AI response text from OpenAI-format response
             ai_response = result.get('choices', [{}])[0].get('message', {}).get('content', 'Unable to generate response')
-            print(f"DEBUG: Real API response received: {ai_response[:50]}...")
+            print(f"DEBUG: Real API response: {ai_response[:50]}...")
             return jsonify({"response": ai_response}), 200
         else:
-            error_details = response.text if response.text else "No error details"
-            print(f"DEBUG: OpenRouter API error: {response.status_code}")
-            print(f"DEBUG: Error response: {error_details}")
-            # Fall back to mock response on API error
+            print(f"DEBUG: OpenRouter API error {response.status_code}: {response.text[:200]}")
             import random
             mock_response = random.choice(MOCK_AI_RESPONSES)
-            print(f"DEBUG: Using mock fallback due to API error")
             return jsonify({"response": mock_response}), 200
     
     except requests.exceptions.Timeout:
-        return jsonify({"error": "AI service timeout - please try again"}), 504
-    except Exception as e:
-        print(f"DEBUG: Exception in api_chat: {str(e)}")
-        # Fall back to mock response on any error
+        print("DEBUG: Request timeout")
         import random
-        mock_response = random.choice(MOCK_AI_RESPONSES)
-        return jsonify({"response": mock_response}), 200
+        return jsonify({"response": random.choice(MOCK_AI_RESPONSES)}), 200
+    except Exception as e:
+        print(f"DEBUG: Exception in ai_chat: {type(e).__name__}: {str(e)}")
+        import random
+        return jsonify({"response": random.choice(MOCK_AI_RESPONSES)}), 200
 
 @app.route('/investment_strategy', methods=['POST'])
 def investment_strategy():
     data = request.get_json()
     if not data:
         return jsonify({"error": "Missing JSON request body"}), 400
-
-    if not GEMINI_API_KEY:
-        return jsonify({"error": "GEMINI_API_KEY is not set"}), 500
-
-    if not GEMINI_ENDPOINT_URL:
-        return jsonify({"error": "GEMINI_ENDPOINT_URL is not set"}), 500
 
     user_id = data.get('user_id')
     user = User.query.get(user_id)
