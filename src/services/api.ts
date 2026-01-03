@@ -25,10 +25,20 @@ const handleError = (error: unknown): never => {
 // Generic fetch wrapper with error handling
 const fetchWithErrorHandling = async (endpoint: string, options: RequestInit = {}) => {
   try {
+    const hasBody = options.body != null;
+    const method = (options.method || "GET").toUpperCase();
+
+    // Only set JSON Content-Type when we actually send a body.
+    // Setting Content-Type on GET triggers unnecessary CORS preflight.
+    const defaultHeaders: Record<string, string> = {};
+    if (hasBody && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      defaultHeaders["Content-Type"] = "application/json";
+    }
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
+        ...defaultHeaders,
         ...options.headers,
       },
     });
@@ -99,6 +109,23 @@ export const portfolioApi = {
     }),
 };
 
+// News API
+export const newsApi = {
+  fetchNews: async (ticker?: string) => {
+    try {
+      const params = ticker ? `?ticker=${ticker}` : '';
+      const response = await fetch(`${API_BASE_URL}/news${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch news');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('News API Error:', error);
+      return null;
+    }
+  },
+};
+
 // Tax Liability API
 export const taxApi = {
   calculateTaxLiability: (portfolio: unknown[]) =>
@@ -118,6 +145,11 @@ export const marketApi = {
     
   fetchAllMarketData: () =>
     fetchWithErrorHandling("/market-data", {
+      method: "GET",
+    }),
+
+  fetchMutualFunds: (limit: number = 500) =>
+    fetchWithErrorHandling(`/api/mutual-funds?limit=${encodeURIComponent(limit)}`, {
       method: "GET",
     }),
 };

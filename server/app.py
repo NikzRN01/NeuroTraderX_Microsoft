@@ -1,9 +1,10 @@
 import os
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
 import requests
+import pandas as pd
 
 # Load environment variables from .env file
 load_dotenv()
@@ -11,12 +12,20 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 
-# Enable CORS for frontend communication
+# Enable CORS for all routes - allow Vite dev server and other origins
 CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:8080"],
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+    r"/*": {
+        "origins": [
+            "http://localhost:5173", 
+            "http://localhost:4173", 
+            "http://127.0.0.1:5173", 
+            "http://127.0.0.1:4173",
+            "http://localhost:8080", 
+            "http://localhost:3000", 
+            "http://127.0.0.1:8080"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "User-ID"]
     }
 })
 
@@ -25,7 +34,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///neurotradx.db'  # Change to P
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')  
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+STEADY_API_TOKEN = os.getenv('STEADY_API_TOKEN')
 
 # Models
 class User(db.Model):
@@ -236,6 +246,59 @@ def investment_strategy():
     
     except Exception as e:
         return jsonify({"error": f"Error fetching investment strategy: {str(e)}"}), 500
+
+@app.route('/news', methods=['GET'])
+def get_news():
+    """Fetch market news from Steady API"""
+    if not STEADY_API_TOKEN:
+        return jsonify({"error": "STEADY_API_TOKEN is not configured"}), 500
+    
+    # Get tickers from query params or use defaults
+    tickers = request.args.get('ticker', 'AAPL,TSLA,GOOGL,MSFT')
+    
+    news_url = 'https://api.steadyapi.com/v1/markets/news'
+    params = {'ticker': tickers}
+    headers = {'Authorization': f'Bearer {STEADY_API_TOKEN}'}
+    
+    try:
+        response = requests.get(news_url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        news_data = response.json()
+        return jsonify(news_data), 200
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e), "message": "Failed to fetch news from API"}), 500
+
+
+@app.route('/api/mutual-funds', methods=['GET', 'OPTIONS'])
+def get_mutual_funds():
+    """Serve mutual funds data from the bundled CSV.
+
+    Query params:
+      - limit: number of rows to return (default 500, max 5000)
+    """
+
+    # Handle CORS preflight explicitly (Flask-CORS should also cover this)
+    if request.method == 'OPTIONS':
+        return ("", 204)
+
+    try:
+        limit_raw = request.args.get('limit', '500')
+        limit = int(limit_raw)
+        if limit <= 0:
+            limit = 500
+        limit = min(limit, 5000)
+
+        csv_path = os.path.join(os.path.dirname(__file__), 'mutual_funds.csv')
+        df = pd.read_csv(csv_path)
+        rows = df.head(limit).fillna("").to_dict(orient='records')
+        return jsonify({
+            "rows": rows,
+            "count": len(rows),
+        }), 200
+    except FileNotFoundError:
+        return jsonify({"error": "mutual_funds.csv not found"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Run the Flask application
 if __name__ == '__main__':
