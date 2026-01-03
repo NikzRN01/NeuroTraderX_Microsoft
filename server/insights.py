@@ -11,9 +11,12 @@ import base64
 
 app = Flask(__name__)
 
-# Gemini API configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_API_URL = "https://api.gemini.com/v1/insights"  # Replace with the actual Gemini API endpoint
+# OpenRouter API configuration
+from dotenv import load_dotenv
+load_dotenv()
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Function to categorize beta
 def categorize_beta(beta):
@@ -37,23 +40,39 @@ def format_market_cap(market_cap):
     else:  # Billions
         return f"${market_cap / 1e9:.2f}B"
 
-# Function to generate AI-based insights using Gemini API
+# Function to generate AI-based insights using OpenRouter API
 def generate_ai_insights(symbol, prices):
-    if not GEMINI_API_KEY:
-        return "Error generating insights: GEMINI_API_KEY environment variable is not set"
-    # Prepare the payload for the Gemini API
+    if not OPENROUTER_API_KEY:
+        return "Error generating insights: OPENROUTER_API_KEY environment variable is not set"
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
     payload = {
-        "symbol": symbol,
-        "prices": prices,
-        "api_key": GEMINI_API_KEY
+        "model": "openai/gpt-3.5-turbo",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a stock market analyst. Provide brief, actionable insights on stock performance."
+            },
+            {
+                "role": "user",
+                "content": f"Analyze this stock ({symbol}) with recent price history (last 5 prices): {prices}. Provide a brief insight."
+            }
+        ],
+        "max_tokens": 300
     }
 
-    # Make a POST request to the Gemini API
     try:
-        response = requests.post(GEMINI_API_URL, json=payload)
-        response.raise_for_status()  # Raise an error for bad status codes
-        insight = response.json().get("insight", "No insight generated.")
-        return insight
+        response = requests.post(OPENROUTER_API_URL, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            insight = result.get('choices', [{}])[0].get('message', {}).get('content', "No insight generated.")
+            return insight
+        else:
+            return f"Error generating insights: API returned {response.status_code}"
     except requests.exceptions.RequestException as e:
         return f"Error generating insights: {e}"
 
@@ -84,6 +103,7 @@ def get_stock_data(symbols, days):
         ai_insight = generate_ai_insights(symbol, hist['Close'].tolist()[-5:])
 
         stock_data[symbol] = {
+                # Generate AI-based insights using OpenRouter API
             "Symbol": symbol,
             "Last Price": last_price,
             "Change Percentage": change_percentage,

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Bot, User, ArrowDown } from "lucide-react";
+import { aiApi } from "@/services/api";
 
 interface Message {
   id: string;
@@ -45,32 +46,36 @@ const AiChat = () => {
       timestamp: new Date()
     };
     
+    const userInput = input;
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setIsTyping(true);
     
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponses = [
-        "Based on your portfolio, I recommend diversifying into more tech stocks.",
-        "The market indicators suggest a cautious approach to energy stocks right now.",
-        "Your investment strategy looks solid. Consider rebalancing quarterly.",
-        "I noticed you have limited exposure to international markets. This might be an area to explore.",
-        "Based on current trends, the tech sector appears to be gaining momentum."
-      ];
-      
-      const randomResponse = aiResponses[Math.floor(Math.random() * aiResponses.length)];
+    try {
+      // Call real API
+      const response = await aiApi.sendMessage(userInput);
+      const aiResponse = typeof response === 'string' ? response : response.response;
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: randomResponse,
+        content: aiResponse,
         role: "ai",
         timestamp: new Date()
       };
       
       setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      // Show error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "Sorry, I couldn't process your request. Please try again.",
+        role: "ai",
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const formatTime = (date: Date) => {

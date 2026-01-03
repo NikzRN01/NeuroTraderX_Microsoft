@@ -1,9 +1,14 @@
 import os
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 import requests
 import pandas as pd
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -12,13 +17,21 @@ app = Flask(__name__)
 # NOTE: tighten this in production.
 CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173", "http://127.0.0.1:4173"]}})
 
+# Enable CORS for frontend communication
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:8080"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
+
 # Set up database URI (using SQLite for simplicity)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///neurotradx.db'  # Change to PostgreSQL/MySQL in production
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')  
-GEMINI_ENDPOINT_URL = os.getenv("GEMINI_ENDPOINT_URL")
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')  
 
 # Models
 class User(db.Model):
@@ -94,32 +107,6 @@ def update_preferences():
 def home():
     return "Hello"
 
-
-@app.route("/api/mutual-funds", methods=["GET"])
-def mutual_funds():
-    csv_path = os.path.join(os.path.dirname(__file__), "mutual_funds.csv")
-    if not os.path.exists(csv_path):
-        return jsonify({"error": "mutual_funds.csv not found"}), 404
-
-    limit_raw = request.args.get("limit")
-    try:
-        limit = int(limit_raw) if limit_raw is not None else None
-        if limit is not None:
-            limit = max(1, min(limit, 2000))
-    except ValueError:
-        return jsonify({"error": "limit must be an integer"}), 400
-
-    try:
-        df = pd.read_csv(csv_path)
-        if limit is not None:
-            df = df.head(limit)
-
-        # Ensure missing values become JSON null (not NaN).
-        df = df.astype(object).where(pd.notnull(df), None)
-        return jsonify({"rows": df.to_dict(orient="records")}), 200
-    except Exception as e:
-        return jsonify({"error": f"Failed to read mutual_funds.csv: {str(e)}"}), 500
-
 @app.route('/investment_strategy', methods=['POST'])
 def investment_strategy():
     data = request.get_json()
@@ -138,31 +125,53 @@ def investment_strategy():
     if not user:
         return jsonify({"error": "User not found"}), 404
     
-    # Call Gemini API to get personalized investment strategy
-    payload = {
-        "financial_goal": user.financial_goal,
-        "risk_tolerance": user.risk_tolerance,
-        "investment_preference": user.investment_preference
-    }
+    if not OPENROUTER_API_KEY:
+        return jsonify({"error": "AI service not configured"}), 500
     
-    # Sending a POST request to the Gemini API with the user's preferences
     try:
-        response = requests.post(
-            GEMINI_ENDPOINT_URL,
-            json=payload,
-            params={"key": GEMINI_API_KEY},
-            timeout=30,
-        )
+        # Call OpenRouter API for personalized strategy
+        openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "NeuroTradeX"
+        }
+        
+        strategy_prompt = f"""Based on the following investor profile, provide a personalized investment strategy:
+        Financial Goal: {user.financial_goal}
+        Risk Tolerance: {user.risk_tolerance}
+        Investment Preference: {user.investment_preference}
+        
+        Provide specific, actionable advice in 2-3 paragraphs."""
+        
+        payload = {
+            "model": "openai/gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a professional investment advisor providing personalized strategies."
+                },
+                {
+                    "role": "user",
+                    "content": strategy_prompt
+                }
+            ],
+            "max_tokens": 800
+        }
+        
+        response = requests.post(openrouter_url, json=payload, headers=headers, timeout=30)
         
         if response.status_code == 200:
-            # Assuming the response contains the strategy
-            investment_strategy = response.json()
-            return jsonify({"investment_strategy": investment_strategy}), 200
+            result = response.json()
+            strategy = result.get('choices', [{}])[0].get('message', {}).get('content', 'Unable to generate strategy')
+            return jsonify({"investment_strategy": strategy}), 200
         else:
             return jsonify({"error": "Failed to fetch investment strategy"}), 500
-
+    
     except Exception as e:
-        return jsonify({"error": f"Error fetching data from Gemini: {str(e)}"}), 500
+        return jsonify({"error": f"Error fetching investment strategy: {str(e)}"}), 500
 
 # Run the Flask application
 if __name__ == '__main__':
