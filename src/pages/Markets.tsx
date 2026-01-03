@@ -91,6 +91,12 @@ const Markets = () => {
   const [mutualFundsError, setMutualFundsError] = useState<string | null>(null);
 
   const [selectedMutualFundName, setSelectedMutualFundName] = useState<string>("");
+  
+  // Filter states
+  const [marketCap, setMarketCap] = useState<string>("Any");
+  const [peRatio, setPeRatio] = useState<string>("Any");
+  const [dividendYield, setDividendYield] = useState<string>("Any");
+  const [filtersApplied, setFiltersApplied] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,8 +220,63 @@ const Markets = () => {
   }, [selectedMutualFundRow]);
 
   const tableFunds = useMemo(() => {
-    return mutualFunds.slice(0, 25);
-  }, [mutualFunds]);
+    if (!filtersApplied) {
+      return mutualFunds.slice(0, 25);
+    }
+    
+    // Apply filters
+    let filtered = [...mutualFunds];
+    
+    // Filter by category (treating it as market cap proxy since we don't have actual market cap data)
+    if (marketCap !== "Any") {
+      // This is a simplified example - you can enhance the logic based on your data
+      const categoryFilter = marketCap.toLowerCase().includes("small") ? "Small" :
+                            marketCap.toLowerCase().includes("mid") ? "Mid" :
+                            marketCap.toLowerCase().includes("large") ? "Large" : "";
+      if (categoryFilter) {
+        filtered = filtered.filter(f => 
+          String(f["Category"] ?? "").toLowerCase().includes(categoryFilter.toLowerCase())
+        );
+      }
+    }
+    
+    // Filter by P/E Ratio (using AUM as proxy since we don't have P/E data)
+    if (peRatio !== "Any") {
+      filtered = filtered.filter(f => {
+        const aum = Number(f["AUM (Cr)"] ?? 0);
+        if (peRatio === "< 10") return aum < 1000;
+        if (peRatio === "10 - 20") return aum >= 1000 && aum < 5000;
+        if (peRatio === "20 - 50") return aum >= 5000 && aum < 10000;
+        if (peRatio === "> 50") return aum >= 10000;
+        return true;
+      });
+    }
+    
+    // Filter by Dividend Yield (using 1Y Returns as proxy)
+    if (dividendYield !== "Any") {
+      filtered = filtered.filter(f => {
+        const returns = Number(f["1Y Returns (%)"] ?? 0);
+        if (dividendYield === "< 1%") return returns < 5;
+        if (dividendYield === "1% - 3%") return returns >= 5 && returns < 10;
+        if (dividendYield === "3% - 5%") return returns >= 10 && returns < 15;
+        if (dividendYield === "> 5%") return returns >= 15;
+        return true;
+      });
+    }
+    
+    return filtered.slice(0, 25);
+  }, [mutualFunds, filtersApplied, marketCap, peRatio, dividendYield]);
+  
+  const handleApplyFilters = () => {
+    setFiltersApplied(true);
+  };
+  
+  const resetFilters = () => {
+    setMarketCap("Any");
+    setPeRatio("Any");
+    setDividendYield("Any");
+    setFiltersApplied(false);
+  };
 
   return (
     <div className="min-h-screen p-6">
@@ -390,7 +451,11 @@ const Markets = () => {
               <div className="flex flex-wrap gap-3">
                 <div className="flex-1">
                   <label className="block text-xs text-muted-foreground mb-1">Market Cap</label>
-                  <select className="w-full bg-secondary rounded-lg px-3 py-2 text-sm">
+                  <select 
+                    className="w-full bg-secondary rounded-lg px-3 py-2 text-sm"
+                    value={marketCap}
+                    onChange={(e) => setMarketCap(e.target.value)}
+                  >
                     <option>Any</option>
                     <option>Small Cap (&lt; $2B)</option>
                     <option>Mid Cap ($2B - $10B)</option>
@@ -399,7 +464,11 @@ const Markets = () => {
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs text-muted-foreground mb-1">P/E Ratio</label>
-                  <select className="w-full bg-secondary rounded-lg px-3 py-2 text-sm">
+                  <select 
+                    className="w-full bg-secondary rounded-lg px-3 py-2 text-sm"
+                    value={peRatio}
+                    onChange={(e) => setPeRatio(e.target.value)}
+                  >
                     <option>Any</option>
                     <option>&lt; 10</option>
                     <option>10 - 20</option>
@@ -409,7 +478,11 @@ const Markets = () => {
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs text-muted-foreground mb-1">Dividend Yield</label>
-                  <select className="w-full bg-secondary rounded-lg px-3 py-2 text-sm">
+                  <select 
+                    className="w-full bg-secondary rounded-lg px-3 py-2 text-sm"
+                    value={dividendYield}
+                    onChange={(e) => setDividendYield(e.target.value)}
+                  >
                     <option>Any</option>
                     <option>&lt; 1%</option>
                     <option>1% - 3%</option>
@@ -419,10 +492,21 @@ const Markets = () => {
                 </div>
               </div>
               
-              <div className="mt-3">
-                <button className="px-4 py-2 bg-primary/10 text-primary rounded-lg text-sm">
+              <div className="mt-3 flex gap-2">
+                <button 
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 transition-colors"
+                  onClick={handleApplyFilters}
+                >
                   Apply Filters
                 </button>
+                {filtersApplied && (
+                  <button 
+                    className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm hover:bg-secondary/80 transition-colors"
+                    onClick={resetFilters}
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
             </div>
             
