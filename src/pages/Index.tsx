@@ -110,85 +110,49 @@ const Dashboard = () => {
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2">
-              <GlassCard title="Latest Financial News">
-                {newsLoading ? (
-                  <div className="flex justify-center items-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                ) : newsError ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>{newsError}</p>
-                  </div>
-                ) : newsItems.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>No news available</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-4">
-                      {newsItems.slice(0, 5).map((news) => (
-                        <a 
-                          key={news.id}
-                          href={news.url || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex justify-between items-start border-b border-border/30 pb-3 last:border-0 last:pb-0 hover:bg-secondary/20 p-2 rounded-lg transition-colors"
-                        >
-                          <div>
-                            <h4 className="text-sm font-medium">{news.title}</h4>
-                            <div className="mt-1 flex items-center text-xs text-muted-foreground">
-                              <span>{news.source}</span>
-                              <span className="mx-1.5">•</span>
-                              <span>{news.time}</span>
-                              <span className="mx-1.5">•</span>
-                              <span className="bg-secondary px-1.5 py-0.5 rounded text-[10px]">{news.category}</span>
-                            </div>
-                          </div>
-                          <button className="text-primary">
-                            <ArrowRight className="h-4 w-4" />
-                          </button>
-                        </a>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </GlassCard>
-            </div>
-
-            <div>
-              <GlassCard title="AI Recommendations">
-                <div className="space-y-3">
-                  {insightRecommendations.map((rec) => (
-                    <div key={rec.id} className="glass-panel rounded-lg p-3">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="text-sm font-medium">{rec.title}</h4>
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${
-                          rec.impact === 'High' ? 'bg-red-500/20 text-red-400' : 
-                          rec.impact === 'Medium' ? 'bg-amber-500/20 text-amber-400' : 
-                          'bg-blue-500/20 text-blue-400'
-                        }`}>
-                          {rec.impact}
-                        </span>
+          <GlassCard title="Latest Financial News">
+            {newsLoading ? (
+              <div className="flex justify-center items-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : newsError ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>{newsError}</p>
+              </div>
+            ) : newsItems.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No news available</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-4">
+                  {newsItems.slice(0, 5).map((news) => (
+                    <a 
+                      key={news.id}
+                      href={news.url || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex justify-between items-start border-b border-border/30 pb-3 last:border-0 last:pb-0 hover:bg-secondary/20 p-2 rounded-lg transition-colors"
+                    >
+                      <div>
+                        <h4 className="text-sm font-medium">{news.title}</h4>
+                        <div className="mt-1 flex items-center text-xs text-muted-foreground">
+                          <span>{news.source}</span>
+                          <span className="mx-1.5">•</span>
+                          <span>{news.time}</span>
+                          <span className="mx-1.5">•</span>
+                          <span className="bg-secondary px-1.5 py-0.5 rounded text-[10px]">{news.category}</span>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mb-2">{rec.description}</p>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs bg-secondary px-1.5 py-0.5 rounded">{rec.type}</span>
-                        <Link 
-                          to={`/ai-recommendation/${rec.id}`} 
-                          className="text-primary text-xs flex items-center gap-1"
-                        >
-                          <span>Take action</span>
-                          <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </div>
-                    </div>
+                      <button className="text-primary">
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </a>
                   ))}
                 </div>
-              </GlassCard>
-            </div>
-          </div>
+              </>
+            )}
+          </GlassCard>
         </motion.div>
 
         <motion.div variants={itemVariants}>
