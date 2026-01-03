@@ -227,46 +227,6 @@ const Insights = () => {
             </Card>
           </motion.div>
         )}
-
-        {/* Related Insights */}
-        {insightResults && (
-          <motion.div 
-            variants={itemVariants}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-          >
-            <Card className="p-6">
-              <h2 className="text-lg font-medium mb-4">Related Insights</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="glass-panel rounded-lg p-4">
-                  <h3 className="text-sm font-medium mb-2">Industry Comparison</h3>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    See how this investment compares to industry benchmarks and peers.
-                  </p>
-                  <Button variant="outline" size="sm" className="w-full">View Comparison</Button>
-                </div>
-                
-                <div className="glass-panel rounded-lg p-4">
-                  <h3 className="text-sm font-medium mb-2">News Sentiment</h3>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Analysis of recent news and social media sentiment towards this investment.
-                  </p>
-                  <Button variant="outline" size="sm" className="w-full">View Sentiment</Button>
-                </div>
-                
-                <div className="glass-panel rounded-lg p-4">
-                  <h3 className="text-sm font-medium mb-2">Historical Performance</h3>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Detailed breakdown of performance across different market conditions.
-                  </p>
-                  <Button variant="outline" size="sm" className="w-full">View History</Button>
-                </div>
-              </div>
-            </Card>
-          </motion.div>
-        )}
       </motion.div>
     </div>
   );
