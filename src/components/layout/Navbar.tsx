@@ -90,11 +90,6 @@ const Navbar = () => {
     navigate("/landing");
   };
 
-  const handleNotificationClick = (id: number) => {
-    setIsNotificationsOpen(false);
-    navigate(`/ai-recommendation/${id}`);
-  };
-
   // For landing page and auth pages, show simplified navbar
   if (location.pathname === "/landing" || location.pathname === "/signin" || location.pathname === "/signup") {
     return (
@@ -192,48 +187,6 @@ const Navbar = () => {
           
           {isAuthenticated ? (
             <>
-              {/* Notifications */}
-              <div className="relative" ref={notificationsDropdownRef}>
-                <button 
-                  className="relative"
-                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                  aria-label="Notifications"
-                >
-                  <BellRing className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors" />
-                  <span className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center rounded-full bg-destructive text-[8px] font-medium text-white">
-                    {insightRecommendations.length}
-                  </span>
-                </button>
-                
-                {/* Notifications Dropdown */}
-                {isNotificationsOpen && (
-                  <div className="absolute right-0 mt-2 w-72 glass-panel rounded-lg animate-fade-in p-2 z-50">
-                    <h3 className="text-sm font-medium px-2 py-1 border-b border-border">
-                      AI Recommendations
-                    </h3>
-                    <div className="max-h-80 overflow-y-auto">
-                      {insightRecommendations.map((rec) => (
-                        <button
-                          key={rec.id}
-                          className="w-full text-left p-2 hover:bg-secondary/40 rounded-md flex items-start gap-2 my-1"
-                          onClick={() => handleNotificationClick(rec.id)}
-                        >
-                          <span className={`h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${
-                            rec.impact === 'High' ? 'bg-red-400' : 
-                            rec.impact === 'Medium' ? 'bg-amber-400' : 
-                            'bg-blue-400'
-                          }`}></span>
-                          <div>
-                            <p className="text-xs font-medium">{rec.title}</p>
-                            <p className="text-xs text-muted-foreground line-clamp-2">{rec.description}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Profile */}
               <div className="relative" ref={profileDropdownRef}>
                 <button 

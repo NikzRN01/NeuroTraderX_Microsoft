@@ -108,36 +108,17 @@ const NewsPage = () => {
         animate="show"
         className="space-y-6"
       >
-        <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Link to="/" className="text-primary hover:text-primary/80 transition-colors">
-              <ChevronLeft className="h-5 w-5" />
-            </Link>
-            <h1 className="text-2xl font-bold text-gradient">Financial News</h1>
-          </div>
-
-          <div className="relative">
+        <motion.div variants={itemVariants} className="flex flex-col items-center gap-4">
+          <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search news..."
-              className="input-search pl-10 w-64"
+              className="input-search pl-10 w-full"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-        </motion.div>
-
-        <motion.div variants={itemVariants} className="flex gap-2 overflow-x-auto pb-2">
-          {categories.map(category => (
-            <button
-              key={category}
-              className={categoryClass(category)}
-              onClick={() => setSelectedCategory(category)}
-            >
-              {category}
-            </button>
-          ))}
         </motion.div>
 
         <motion.div variants={itemVariants}>
