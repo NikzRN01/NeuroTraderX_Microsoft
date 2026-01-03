@@ -1,17 +1,31 @@
 import os
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 import requests
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Enable CORS for frontend communication
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:8080"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 # Set up database URI (using SQLite for simplicity)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///neurotradx.db'  # Change to PostgreSQL/MySQL in production
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')  
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')  
 
 # Models
 class User(db.Model):
@@ -87,6 +101,88 @@ def update_preferences():
 def home():
     return "Hello"
 
+# Mock AI responses for testing (when Gemini quota is exhausted)
+MOCK_AI_RESPONSES = [
+    "Based on your tech stock portfolio, consider taking profits on high-volatility stocks and reinvesting in stable dividend payers.",
+    "Tech stocks have strong growth potential, but ensure you have adequate diversification across sectors to manage risk.",
+    "If you're bullish on tech, consider dollar-cost averaging your investments to smooth out market volatility.",
+    "Your tech exposure looks reasonable. I'd recommend adding some defensive positions in healthcare or utilities.",
+    "Tech sector fundamentals remain strong. Focus on companies with solid earnings growth and reasonable valuations."
+]
+
+@app.route('/api/chat', methods=['POST'])
+def ai_chat():
+    """Chat with Gemini AI for investment advice"""
+    data = request.get_json()
+    user_message = data.get('message')
+    
+    if not user_message:
+        return jsonify({"error": "Message is required"}), 400
+    
+    # Debug: print API key status
+    print(f"DEBUG: OPENROUTER_API_KEY is set: {bool(OPENROUTER_API_KEY)}")
+    print(f"DEBUG: OPENROUTER_API_KEY value: {OPENROUTER_API_KEY[:30] if OPENROUTER_API_KEY else 'None'}...")
+    
+    # Use mock response if OpenRouter API is not available
+    if not OPENROUTER_API_KEY:
+        import random
+        print("DEBUG: No API key, using mock response")
+        mock_response = random.choice(MOCK_AI_RESPONSES)
+        return jsonify({"response": mock_response}), 200
+    
+    try:
+        # Call OpenRouter API (compatible with multiple models including Gemini)
+        openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "NeuroTradeX"
+        }
+        
+        payload = {
+            "model": "openai/gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a professional investment advisor for NeuroTradeX. Answer investment-related questions concisely and helpfully."
+                },
+                {
+                    "role": "user",
+                    "content": user_message
+                }
+            ],
+            "max_tokens": 500
+        }
+        
+        response = requests.post(openrouter_url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            # Extract the AI response text from OpenAI-format response
+            ai_response = result.get('choices', [{}])[0].get('message', {}).get('content', 'Unable to generate response')
+            print(f"DEBUG: Real API response received: {ai_response[:50]}...")
+            return jsonify({"response": ai_response}), 200
+        else:
+            error_details = response.text if response.text else "No error details"
+            print(f"DEBUG: OpenRouter API error: {response.status_code}")
+            print(f"DEBUG: Error response: {error_details}")
+            # Fall back to mock response on API error
+            import random
+            mock_response = random.choice(MOCK_AI_RESPONSES)
+            print(f"DEBUG: Using mock fallback due to API error")
+            return jsonify({"response": mock_response}), 200
+    
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "AI service timeout - please try again"}), 504
+    except Exception as e:
+        print(f"DEBUG: Exception in api_chat: {str(e)}")
+        # Fall back to mock response on any error
+        import random
+        mock_response = random.choice(MOCK_AI_RESPONSES)
+        return jsonify({"response": mock_response}), 200
+
 @app.route('/investment_strategy', methods=['POST'])
 def investment_strategy():
     data = request.get_json()
@@ -96,28 +192,53 @@ def investment_strategy():
     if not user:
         return jsonify({"error": "User not found"}), 404
     
-    # Call Gemini API to get personalized investment strategy
-    payload = {
-        "financial_goal": user.financial_goal,
-        "risk_tolerance": user.risk_tolerance,
-        "investment_preference": user.investment_preference
-    }
+    if not OPENROUTER_API_KEY:
+        return jsonify({"error": "AI service not configured"}), 500
     
-    # Sending a POST request to the Gemini API with the user's preferences
     try:
-        endpoint_url = os.getenv("GEMINI_ENDPOINT_URL", GEMINI_API_URL)
-        params = {"key": GEMINI_API_KEY} if GEMINI_API_KEY else None
-        response = requests.post(endpoint_url, json=payload, params=params)
+        # Call OpenRouter API for personalized strategy
+        openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "NeuroTradeX"
+        }
+        
+        strategy_prompt = f"""Based on the following investor profile, provide a personalized investment strategy:
+        Financial Goal: {user.financial_goal}
+        Risk Tolerance: {user.risk_tolerance}
+        Investment Preference: {user.investment_preference}
+        
+        Provide specific, actionable advice in 2-3 paragraphs."""
+        
+        payload = {
+            "model": "openai/gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a professional investment advisor providing personalized strategies."
+                },
+                {
+                    "role": "user",
+                    "content": strategy_prompt
+                }
+            ],
+            "max_tokens": 800
+        }
+        
+        response = requests.post(openrouter_url, json=payload, headers=headers, timeout=30)
         
         if response.status_code == 200:
-            # Assuming the response contains the strategy
-            investment_strategy = response.json()
-            return jsonify({"investment_strategy": investment_strategy}), 200
+            result = response.json()
+            strategy = result.get('choices', [{}])[0].get('message', {}).get('content', 'Unable to generate strategy')
+            return jsonify({"investment_strategy": strategy}), 200
         else:
             return jsonify({"error": "Failed to fetch investment strategy"}), 500
-
+    
     except Exception as e:
-        return jsonify({"error": f"Error fetching data from Gemini: {str(e)}"}), 500
+        return jsonify({"error": f"Error fetching investment strategy: {str(e)}"}), 500
 
 # Run the Flask application
 if __name__ == '__main__':

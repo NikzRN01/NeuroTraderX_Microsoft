@@ -144,3 +144,12 @@ export const insightsApi = {
       body: JSON.stringify({ symbols, intervals }),
     }),
 };
+
+// AI Chat API
+export const aiApi = {
+  sendMessage: (message: string) =>
+    fetchWithErrorHandling<{ response: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+};
