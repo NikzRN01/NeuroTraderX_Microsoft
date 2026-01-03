@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { mockMarketData, newsItems } from "@/utils/mockData";
-import { marketApi } from "@/services/api";
+import { marketApi, newsApi } from "@/services/api";
 import mutualFundsCsvText from "../../server/mutual_funds.csv?raw";
 
 type MutualFundRow = Record<string, string | number | null | undefined>;
@@ -97,6 +97,10 @@ const Markets = () => {
   const [peRatio, setPeRatio] = useState<string>("Any");
   const [dividendYield, setDividendYield] = useState<string>("Any");
   const [filtersApplied, setFiltersApplied] = useState<boolean>(false);
+  
+  // News states
+  const [news, setNews] = useState<any[]>([]);
+  const [newsLoading, setNewsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +130,53 @@ const Markets = () => {
     };
 
     void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  
+  // Fetch news from backend
+  useEffect(() => {
+    let cancelled = false;
+    
+    const loadNews = async () => {
+      setNewsLoading(true);
+      try {
+        const data = await newsApi.fetchNews();
+        if (!cancelled && data) {
+          // API returns { body: [...], meta: {...} }
+          const newsArray = data.body || data;
+          const transformedNews = Array.isArray(newsArray) ? newsArray.map((item: any, index: number) => ({
+            id: index + 1,
+            title: item.title || 'No title',
+            description: item.description || '',
+            source: 'Yahoo Finance', // API doesn't provide source, using default
+            time: item.pubDate ? new Date(item.pubDate).toLocaleString('en-US', { 
+              month: 'short', 
+              day: 'numeric', 
+              hour: 'numeric', 
+              minute: '2-digit' 
+            }) : 'Recently',
+            category: 'Markets',
+            url: item.link || '#'
+          })) : [];
+          setNews(transformedNews);
+        } else if (!cancelled) {
+          // Fallback to mock data if API fails
+          setNews(newsItems);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to fetch news:', error);
+          // Fallback to mock data
+          setNews(newsItems);
+        }
+      } finally {
+        if (!cancelled) setNewsLoading(false);
+      }
+    };
+    
+    void loadNews();
     return () => {
       cancelled = true;
     };
@@ -415,31 +466,41 @@ const Markets = () => {
           
           <Card title="Market News" className="p-6">
             <div className="space-y-4">
-              {newsItems.map((news) => (
-                <a 
-                  key={news.id}
-                  href="#"
-                  className="flex justify-between items-start border-b border-border/30 pb-3 last:border-0 last:pb-0 hover:bg-secondary/20 p-2 rounded-lg transition-colors"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    window.open('https://finance.yahoo.com', '_blank');
-                  }}
-                >
-                  <div>
-                    <h4 className="text-sm font-medium">{news.title}</h4>
-                    <div className="mt-1 flex items-center text-xs text-muted-foreground">
-                      <span>{news.source}</span>
-                      <span className="mx-1.5">•</span>
-                      <span>{news.time}</span>
-                      <span className="mx-1.5">•</span>
-                      <span className="bg-secondary px-1.5 py-0.5 rounded text-[10px]">{news.category}</span>
+              {newsLoading ? (
+                <div className="text-sm text-muted-foreground">Loading news...</div>
+              ) : news.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No news available</div>
+              ) : (
+                news.map((newsItem) => (
+                  <a 
+                    key={newsItem.id}
+                    href="#"
+                    className="flex justify-between items-start border-b border-border/30 pb-3 last:border-0 last:pb-0 hover:bg-secondary/20 p-2 rounded-lg transition-colors"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (newsItem.url && newsItem.url !== '#') {
+                        window.open(newsItem.url, '_blank');
+                      } else {
+                        window.open('https://finance.yahoo.com', '_blank');
+                      }
+                    }}
+                  >
+                    <div>
+                      <h4 className="text-sm font-medium">{newsItem.title}</h4>
+                      <div className="mt-1 flex items-center text-xs text-muted-foreground">
+                        <span>{newsItem.source}</span>
+                        <span className="mx-1.5">•</span>
+                        <span>{newsItem.time}</span>
+                        <span className="mx-1.5">•</span>
+                        <span className="bg-secondary px-1.5 py-0.5 rounded text-[10px]">{newsItem.category}</span>
+                      </div>
                     </div>
-                  </div>
-                  <button className="text-primary">
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </a>
-              ))}
+                    <button className="text-primary">
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </a>
+                ))
+              )}
             </div>
           </Card>
         </motion.div>

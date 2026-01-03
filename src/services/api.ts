@@ -99,6 +99,23 @@ export const portfolioApi = {
     }),
 };
 
+// News API
+export const newsApi = {
+  fetchNews: async (ticker?: string) => {
+    try {
+      const params = ticker ? `?ticker=${ticker}` : '';
+      const response = await fetch(`${API_BASE_URL}/news${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch news');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('News API Error:', error);
+      return null;
+    }
+  },
+};
+
 // Tax Liability API
 export const taxApi = {
   calculateTaxLiability: (portfolio: unknown[]) =>

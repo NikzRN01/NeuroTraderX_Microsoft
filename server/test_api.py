@@ -1,7 +1,8 @@
 import requests
 import json
+import os
 
-api_key = "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"
+api_key = os.get_env("OPENROUTER_API_KEY")
 
 print("Testing different OpenRouter request formats...\n")
 
