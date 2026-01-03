@@ -1,10 +1,16 @@
 import os
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import requests
+import pandas as pd
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Allow the Vite dev server (and other local tooling) to call this API.
+# NOTE: tighten this in production.
+CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173", "http://127.0.0.1:4173"]}})
 
 # Set up database URI (using SQLite for simplicity)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///neurotradx.db'  # Change to PostgreSQL/MySQL in production
@@ -87,6 +93,32 @@ def update_preferences():
 @app.route("/")
 def home():
     return "Hello"
+
+
+@app.route("/api/mutual-funds", methods=["GET"])
+def mutual_funds():
+    csv_path = os.path.join(os.path.dirname(__file__), "mutual_funds.csv")
+    if not os.path.exists(csv_path):
+        return jsonify({"error": "mutual_funds.csv not found"}), 404
+
+    limit_raw = request.args.get("limit")
+    try:
+        limit = int(limit_raw) if limit_raw is not None else None
+        if limit is not None:
+            limit = max(1, min(limit, 2000))
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+
+    try:
+        df = pd.read_csv(csv_path)
+        if limit is not None:
+            df = df.head(limit)
+
+        # Ensure missing values become JSON null (not NaN).
+        df = df.astype(object).where(pd.notnull(df), None)
+        return jsonify({"rows": df.to_dict(orient="records")}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to read mutual_funds.csv: {str(e)}"}), 500
 
 @app.route('/investment_strategy', methods=['POST'])
 def investment_strategy():

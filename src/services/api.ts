@@ -120,6 +120,11 @@ export const marketApi = {
     fetchWithErrorHandling("/market-data", {
       method: "GET",
     }),
+
+  fetchMutualFunds: (limit: number = 500) =>
+    fetchWithErrorHandling(`/api/mutual-funds?limit=${encodeURIComponent(limit)}`, {
+      method: "GET",
+    }),
 };
 
 // Future Prediction API

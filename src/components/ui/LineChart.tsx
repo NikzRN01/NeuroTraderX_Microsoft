@@ -15,27 +15,38 @@ interface LineChartProps {
   data: { name: string; value: number }[];
   height?: number;
   showTimeFrames?: boolean;
+  formatValue?: (value: number) => string;
 }
 
-const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+const defaultFormatCurrency = (value: number) =>
+  `$${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+
+const CustomTooltip = (
+  {
+    active,
+    payload,
+    label,
+    formatValue,
+  }: TooltipProps<number, string> & { formatValue: (value: number) => string }
+) => {
   if (active && payload && payload.length) {
     const rawValue = payload[0]?.value;
     const value = typeof rawValue === "number" ? rawValue : Number(rawValue);
     return (
       <div className="glass-panel rounded p-2 text-xs shadow-md">
         <p className="mb-1 font-medium">{label}</p>
-        <p className="text-primary">
-          ${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-        </p>
+        <p className="text-primary">{formatValue(value)}</p>
       </div>
     );
   }
   return null;
 };
 
-const LineChart = ({ data, height = 200, showTimeFrames = true }: LineChartProps) => {
+const LineChart = ({ data, height = 200, showTimeFrames = true, formatValue }: LineChartProps) => {
   const [activeTimeFrame, setActiveTimeFrame] = useState<string>("7 Days");
   const [chartData, setChartData] = useState(data || []);
+
+  const valueFormatter = formatValue ?? defaultFormatCurrency;
 
   useEffect(() => {
     // Initialize with empty data if none provided
@@ -103,11 +114,11 @@ const LineChart = ({ data, height = 200, showTimeFrames = true }: LineChartProps
               <YAxis 
                 stroke="#9ca3af" 
                 fontSize={10} 
-                tickFormatter={(value) => `$${value.toLocaleString()}`}
+                tickFormatter={(value) => valueFormatter(Number(value))}
                 tickLine={false}
                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip formatValue={valueFormatter} />} />
               <Area
                 type="monotone"
                 dataKey="value"
