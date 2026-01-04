@@ -1,288 +1,451 @@
+/**
+ * Tax Optimization Phase 1
+ * 
+ * Features:
+ * - Portfolio holdings with cost basis tracking
+ * - Unrealized gains/losses calculation
+ * - Tax liability estimation
+ * - Tax-loss harvesting recommendations
+ */
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import PageTransition from "@/components/layout/PageTransition";
+import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
+import { 
+  ChevronLeft, 
+  Plus, 
+  TrendingDown, 
+  Calculator,
+  AlertCircle,
+  Info,
+  Trash2
+} from "lucide-react";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DatePicker } from "@/components/ui/date-picker";
-import { toast } from "sonner";
-import { taxApi } from "@/services/api";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  analyzeHolding,
+  calculateTaxSummary,
+  identifyTaxLossHarvesting,
+  formatCurrency,
+  formatPercent,
+  type HoldingWithTax,
+} from "@/utils/taxCalculations";
 
-// Define the schema for portfolio entry validation
-const portfolioItemSchema = z.object({
-  type: z.string(),
-  purchase_date: z.date(),
-  purchase_price: z.number().positive(),
-  current_price: z.number().positive(),
-  quantity: z.number().positive(),
-});
-
-type PortfolioItem = z.infer<typeof portfolioItemSchema>;
-
-interface TaxSummary {
-  short_term_gains: number;
-  long_term_gains: number;
-  stt_tax: number;
-  ltcg_tax: number;
-  total_tax: number;
+interface HoldingInput {
+  id: string;
+  symbol: string;
+  shares: string;
+  purchasePrice: string;
+  currentPrice: string;
+  purchaseDate: string;
 }
 
 const TaxOptimization = () => {
-  const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
-  const [taxSummary, setTaxSummary] = useState<TaxSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Set up form with validation
-  const form = useForm<PortfolioItem>({
-    resolver: zodResolver(portfolioItemSchema),
-    defaultValues: {
-      type: "stock",
-      purchase_price: 0,
-      current_price: 0,
-      quantity: 0,
+  const [annualIncome, setAnnualIncome] = useState("100000");
+  const [holdings, setHoldings] = useState<HoldingInput[]>([
+    {
+      id: "1",
+      symbol: "",
+      shares: "",
+      purchasePrice: "",
+      currentPrice: "",
+      purchaseDate: "",
     },
-  });
+  ]);
 
-  const onSubmit = (data: PortfolioItem) => {
-    setPortfolioItems([...portfolioItems, data]);
-    form.reset();
-    toast.success("Portfolio item added");
+  // Animation variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 },
+    },
   };
 
-  const calculateTaxLiability = async () => {
-    if (portfolioItems.length === 0) {
-      toast.error("Please add at least one portfolio item");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Format items to send to API
-      const formattedItems = portfolioItems.map(item => ({
-        ...item,
-        purchase_date: item.purchase_date.toISOString().split('T')[0], // Format as YYYY-MM-DD
-      }));
-      
-      const result = await taxApi.calculateTaxLiability(formattedItems);
-      setTaxSummary(result.tax_summary);
-    } catch (error) {
-      console.error("Tax calculation error:", error);
-    } finally {
-      setIsLoading(false);
-    }
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
   };
+
+  // Add new holding row
+  const addHolding = () => {
+    setHoldings([
+      ...holdings,
+      {
+        id: Date.now().toString(),
+        symbol: "",
+        shares: "",
+        purchasePrice: "",
+        currentPrice: "",
+        purchaseDate: "",
+      },
+    ]);
+  };
+
+  // Remove holding row
+  const removeHolding = (id: string) => {
+    setHoldings(holdings.filter(h => h.id !== id));
+  };
+
+  // Update holding field
+  const updateHolding = (id: string, field: keyof HoldingInput, value: string) => {
+    setHoldings(
+      holdings.map(h => (h.id === id ? { ...h, [field]: value } : h))
+    );
+  };
+
+  // Parse and analyze holdings
+  const analyzedHoldings: HoldingWithTax[] = holdings
+    .filter(h => h.symbol && h.shares && h.purchasePrice && h.currentPrice && h.purchaseDate)
+    .map(h => 
+      analyzeHolding(
+        h.symbol.toUpperCase(),
+        parseFloat(h.shares),
+        parseFloat(h.purchasePrice),
+        parseFloat(h.currentPrice),
+        new Date(h.purchaseDate),
+        parseFloat(annualIncome)
+      )
+    );
+
+  const taxSummary = analyzedHoldings.length > 0 
+    ? calculateTaxSummary(analyzedHoldings, parseFloat(annualIncome))
+    : null;
+
+  const harvestingOpportunities = analyzedHoldings.length > 0
+    ? identifyTaxLossHarvesting(analyzedHoldings, parseFloat(annualIncome))
+    : [];
 
   return (
-    <PageTransition>
-      <div className="container py-8 max-w-6xl">
-        <h1 className="text-3xl font-bold mb-6 text-gradient">Tax Optimization</h1>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Form Section */}
+    <div className="min-h-screen p-6">
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="space-y-6"
+      >
+        {/* Header */}
+        <motion.div variants={itemVariants} className="flex items-center gap-4">
+          <Link to="/" className="text-primary hover:text-primary/80 transition-colors">
+            <ChevronLeft className="h-5 w-5" />
+          </Link>
           <div>
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>Add Portfolio Item</CardTitle>
-                <CardDescription>
-                  Enter your investment details to calculate potential tax liability
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="type"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Asset Type</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select asset type" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="stock">Stocks</SelectItem>
-                              <SelectItem value="mutual_fund">Mutual Funds</SelectItem>
-                              <SelectItem value="crypto">Cryptocurrency</SelectItem>
-                              <SelectItem value="gold">Gold</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="purchase_date"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel>Purchase Date</FormLabel>
-                          <DatePicker 
-                            date={field.value} 
-                            setDate={field.onChange}
-                          />
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="purchase_price"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Purchase Price</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                min="0" 
-                                step="0.01" 
-                                onChange={e => field.onChange(parseFloat(e.target.value))}
-                                value={field.value || ""}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <FormField
-                        control={form.control}
-                        name="current_price"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Current Price</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                min="0" 
-                                step="0.01" 
-                                onChange={e => field.onChange(parseFloat(e.target.value))}
-                                value={field.value || ""}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    
-                    <FormField
-                      control={form.control}
-                      name="quantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Quantity</FormLabel>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0" 
-                              step="1" 
-                              onChange={e => field.onChange(parseInt(e.target.value))}
-                              value={field.value || ""}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <div className="flex justify-end">
-                      <Button type="submit">Add to Portfolio</Button>
-                    </div>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-            
-            <Button 
-              onClick={calculateTaxLiability} 
-              className="w-full" 
-              disabled={isLoading || portfolioItems.length === 0}
-            >
-              {isLoading ? "Calculating..." : "Calculate Tax Liability"}
-            </Button>
+            <h1 className="text-3xl font-bold text-gradient">Tax Optimization</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Phase 1: Capital Gains Calculator & Tax-Loss Harvesting
+            </p>
           </div>
-          
-          {/* Results Section */}
-          <div>
-            <Card>
-              <CardHeader>
-                <CardTitle>Portfolio Items</CardTitle>
-                <CardDescription>
-                  {portfolioItems.length === 0 
-                    ? "No items added yet" 
-                    : `${portfolioItems.length} items in your portfolio`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {portfolioItems.length === 0 ? (
-                  <div className="text-center p-6 text-muted-foreground">
-                    Add items to your portfolio to see them here
+        </motion.div>
+
+        {/* Disclaimer */}
+        <motion.div variants={itemVariants}>
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              This tool provides estimates only and should not be considered tax advice. 
+              Please consult a qualified tax professional for your specific situation.
+            </AlertDescription>
+          </Alert>
+        </motion.div>
+
+        {/* Annual Income Input */}
+        <motion.div variants={itemVariants}>
+          <Card className="p-6">
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-xl font-semibold mb-1">Your Tax Information</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enter your annual income to calculate accurate tax rates
+                </p>
+              </div>
+              <div className="max-w-xs">
+                <Label htmlFor="annual-income">Annual Income (USD)</Label>
+                <Input
+                  id="annual-income"
+                  type="number"
+                  value={annualIncome}
+                  onChange={(e) => setAnnualIncome(e.target.value)}
+                  placeholder="100000"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+
+        {/* Portfolio Holdings Input */}
+        <motion.div variants={itemVariants}>
+          <Card className="p-6">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Portfolio Holdings</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Add your investment holdings to analyze tax implications
+                  </p>
+                </div>
+                <Button onClick={addHolding} size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Holding
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {holdings.map((holding) => (
+                  <div
+                    key={holding.id}
+                    className="grid grid-cols-6 gap-3 p-4 rounded-lg bg-secondary/20 border border-border/30"
+                  >
+                    <div>
+                      <Label className="text-xs">Symbol</Label>
+                      <Input
+                        value={holding.symbol}
+                        onChange={(e) => updateHolding(holding.id, "symbol", e.target.value.toUpperCase())}
+                        placeholder="AAPL"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Shares</Label>
+                      <Input
+                        type="number"
+                        value={holding.shares}
+                        onChange={(e) => updateHolding(holding.id, "shares", e.target.value)}
+                        placeholder="100"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Purchase Price</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={holding.purchasePrice}
+                        onChange={(e) => updateHolding(holding.id, "purchasePrice", e.target.value)}
+                        placeholder="150.00"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Current Price</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={holding.currentPrice}
+                        onChange={(e) => updateHolding(holding.id, "currentPrice", e.target.value)}
+                        placeholder="175.00"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Purchase Date</Label>
+                      <Input
+                        type="date"
+                        value={holding.purchaseDate}
+                        onChange={(e) => updateHolding(holding.id, "purchaseDate", e.target.value)}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      {holdings.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeHolding(holding.id)}
+                          className="h-10 w-10"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {portfolioItems.map((item, idx) => (
-                      <Card key={idx} className="bg-card/50">
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-medium">
-                                {item.type.charAt(0).toUpperCase() + item.type.slice(1).replace('_', ' ')}
-                              </p>
-                              <p className="text-muted-foreground text-sm">
-                                Purchased: {item.purchase_date.toLocaleDateString()}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p>${item.current_price} × {item.quantity}</p>
-                              <p className="text-sm text-muted-foreground">
-                                Total: ${(item.current_price * item.quantity).toFixed(2)}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+
+        {/* Tax Summary */}
+        {taxSummary && (
+          <motion.div variants={itemVariants}>
+            <Card className="p-6">
+              <div className="space-y-6">
+                <div className="flex items-center gap-2">
+                  <Calculator className="h-5 w-5 text-primary" />
+                  <h2 className="text-xl font-semibold">Tax Summary</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Net Gain/Loss */}
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-blue-900/40 to-purple-900/40 border border-blue-500/20">
+                    <p className="text-sm text-muted-foreground mb-1">Net Gain/Loss</p>
+                    <p className={`text-2xl font-bold ${taxSummary.netGainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {formatCurrency(taxSummary.netGainLoss)}
+                    </p>
+                  </div>
+
+                  {/* Estimated Tax Liability */}
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-red-900/40 to-orange-900/40 border border-red-500/20">
+                    <p className="text-sm text-muted-foreground mb-1">Estimated Tax</p>
+                    <p className="text-2xl font-bold text-red-400">
+                      {formatCurrency(taxSummary.estimatedTaxLiability)}
+                    </p>
+                  </div>
+
+                  {/* Potential Tax Savings */}
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-green-900/40 to-emerald-900/40 border border-green-500/20">
+                    <p className="text-sm text-muted-foreground mb-1">Potential Savings</p>
+                    <p className="text-2xl font-bold text-green-400">
+                      {formatCurrency(taxSummary.potentialTaxSavings)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Detailed Breakdown */}
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border/30">
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3">Short-Term (≤365 days)</h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Gains:</span>
+                        <span className="text-green-400">{formatCurrency(taxSummary.shortTermGains)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Losses:</span>
+                        <span className="text-red-400">{formatCurrency(taxSummary.shortTermLosses)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3">Long-Term (&gt;365 days)</h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Gains:</span>
+                        <span className="text-green-400">{formatCurrency(taxSummary.longTermGains)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Losses:</span>
+                        <span className="text-red-400">{formatCurrency(taxSummary.longTermLosses)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Holdings Analysis */}
+        {analyzedHoldings.length > 0 && (
+          <motion.div variants={itemVariants}>
+            <Card className="p-6">
+              <h2 className="text-xl font-semibold mb-4">Holdings Analysis</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border/30">
+                      <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground">Symbol</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Shares</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Cost Basis</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Current Value</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Gain/Loss</th>
+                      <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground">Type</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Tax Rate</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Est. Tax</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analyzedHoldings.map((holding, index) => (
+                      <tr key={index} className="border-b border-border/10">
+                        <td className="py-3 px-2 font-medium">{holding.symbol}</td>
+                        <td className="py-3 px-2 text-right">{holding.shares}</td>
+                        <td className="py-3 px-2 text-right">{formatCurrency(holding.costBasis)}</td>
+                        <td className="py-3 px-2 text-right">{formatCurrency(holding.currentValue)}</td>
+                        <td className={`py-3 px-2 text-right ${holding.unrealizedGainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {formatCurrency(holding.unrealizedGainLoss)}
+                          <span className="text-xs ml-1">({formatPercent(holding.unrealizedGainLossPercent)})</span>
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <span className={`text-xs px-2 py-1 rounded ${holding.isLongTerm ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                            {holding.isLongTerm ? 'Long' : 'Short'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-right">{(holding.taxRate * 100).toFixed(0)}%</td>
+                        <td className="py-3 px-2 text-right">{formatCurrency(holding.estimatedTax)}</td>
+                      </tr>
                     ))}
-                  </div>
-                )}
-                
-                {taxSummary && (
-                  <div className="mt-6 p-4 border rounded-lg bg-primary/5 space-y-2">
-                    <h3 className="font-semibold text-lg">Tax Summary</h3>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <p>Short Term Gains:</p>
-                      <p className="text-right">${taxSummary.short_term_gains.toFixed(2)}</p>
-                      
-                      <p>Long Term Gains:</p>
-                      <p className="text-right">${taxSummary.long_term_gains.toFixed(2)}</p>
-                      
-                      <p>STT Tax:</p>
-                      <p className="text-right">${taxSummary.stt_tax.toFixed(2)}</p>
-                      
-                      <p>LTCG Tax:</p>
-                      <p className="text-right">${taxSummary.ltcg_tax.toFixed(2)}</p>
-                      
-                      <p className="font-semibold">Total Tax Liability:</p>
-                      <p className="text-right font-semibold">${taxSummary.total_tax.toFixed(2)}</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
+                  </tbody>
+                </table>
+              </div>
             </Card>
-          </div>
-        </div>
-      </div>
-    </PageTransition>
+          </motion.div>
+        )}
+
+        {/* Tax-Loss Harvesting Opportunities */}
+        {harvestingOpportunities.length > 0 && (
+          <motion.div variants={itemVariants}>
+            <Card className="p-6">
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <TrendingDown className="h-5 w-5 text-green-400" />
+                  <h2 className="text-xl font-semibold">Tax-Loss Harvesting Opportunities</h2>
+                </div>
+                
+                <Alert className="bg-green-900/20 border-green-500/30">
+                  <AlertCircle className="h-4 w-4 text-green-400" />
+                  <AlertDescription className="text-green-400">
+                    You can harvest losses to offset capital gains and reduce your tax liability. 
+                    Remember the wash-sale rule: don't repurchase the same security within 30 days.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="space-y-3">
+                  {harvestingOpportunities.map((opp, index) => (
+                    <div
+                      key={index}
+                      className="p-4 rounded-lg bg-gradient-to-r from-green-900/20 to-emerald-900/20 border border-green-500/20"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-semibold text-lg">{opp.symbol}</h3>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Purchased: {opp.purchaseDate.toLocaleDateString()} 
+                            ({opp.isLongTerm ? 'Long-term' : 'Short-term'})
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Potential Tax Savings</p>
+                          <p className="text-2xl font-bold text-green-400">
+                            {formatCurrency(opp.potentialTaxSavings)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-border/20">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Shares</p>
+                          <p className="font-medium">{opp.shares}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Unrealized Loss</p>
+                          <p className="font-medium text-red-400">{formatCurrency(opp.unrealizedLoss)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Current Value</p>
+                          <p className="font-medium">{formatCurrency(opp.currentValue)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+      </motion.div>
+    </div>
   );
 };
 

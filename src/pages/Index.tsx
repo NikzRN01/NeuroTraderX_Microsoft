@@ -157,21 +157,6 @@ const Dashboard = () => {
 
         <motion.div variants={itemVariants}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <GlassCard className="bg-gradient-to-br from-blue-900/40 to-purple-900/40 border-blue-500/20">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-blue-500/20 p-3">
-                  <TrendingUp className="h-6 w-6 text-blue-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium">Smart Analysis</h3>
-                  <p className="text-sm text-muted-foreground">Get AI-powered insights on your portfolio</p>
-                </div>
-              </div>
-              <Link to="/insights" className="mt-4 w-full rounded-lg bg-blue-500/20 py-2 text-blue-400 hover:bg-blue-500/30 transition-colors block text-center">
-                Analyze Portfolio
-              </Link>
-            </GlassCard>
-
             <GlassCard className="bg-gradient-to-br from-amber-900/40 to-red-900/40 border-amber-500/20">
               <div className="flex items-center gap-3">
                 <div className="rounded-full bg-amber-500/20 p-3">
