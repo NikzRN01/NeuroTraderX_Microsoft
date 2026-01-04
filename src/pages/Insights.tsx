@@ -218,9 +218,9 @@ const Insights = () => {
       insightResults.priceChange || 0,
       insightResults.lastPrice,
       timePeriod,
-      (insightResults as any).dayHigh
+      insightResults.dayHigh
     );
-  }, [timePeriod, insightResults?.symbol, insightResults?.lastPrice, insightResults?.priceChange]);
+  }, [timePeriod, insightResults]);
 
   return (
     <div className="min-h-screen p-6">
@@ -364,7 +364,7 @@ const Insights = () => {
                         </div>
                         <div className="p-4 bg-background/50 rounded-lg">
                           <p className="text-sm text-muted-foreground mb-1">Day High</p>
-                          <p className="text-xl font-bold">${formatNumber((insightResults as any).dayHigh || 0)}</p>
+                          <p className="text-xl font-bold">${formatNumber(insightResults.dayHigh ?? 0)}</p>
                         </div>
                         <div className="p-4 bg-background/50 rounded-lg">
                           <p className="text-sm text-muted-foreground mb-1">Market Cap</p>

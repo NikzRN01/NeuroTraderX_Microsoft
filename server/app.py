@@ -868,6 +868,7 @@ def market_data_overview():
         {"name": "Dow Jones (DIA)", "symbol": "DIA", "preferred": "twelvedata"},
         {"name": "Russell 2000 (IWM)", "symbol": "IWM", "preferred": "twelvedata"},
         {"name": "Nifty 50", "symbol": "NIFTY50", "preferred": "upstox"},
+        {"name": "Sensex", "symbol": "SENSEX", "preferred": "upstox"},
     ]
 
     trending = [
@@ -936,15 +937,73 @@ def market_data_overview():
             "dataSource": "twelvedata_upstox",
         }), 200
 
-    # If we can't fetch enough data, surface a non-200 so the frontend uses mockData.ts.
+    # If we can't fetch enough provider data, fall back to mock data with HTTP 200.
+    # This avoids noisy 503s in Docker/dev when API keys aren't configured.
+    def _mock_quote(symbol: str):
+        mock = get_mock_stock_data(symbol)
+        value = float(mock.get("lastPrice") or 0.0)
+        pct = float(mock.get("priceChange") or 0.0)
+        change = (value * pct / 100.0) if value else 0.0
+        return {
+            "value": value,
+            "change": change,
+            "changePercentage": pct,
+        }
+
+    used_mock = False
+    instrument_map = _load_upstox_instrument_map()
+
+    indices_fallback = []
+    for it in index_proxies:
+        symbol = it["symbol"]
+        preferred = it.get("preferred")
+        if preferred == "upstox":
+            q = _upstox_quote(symbol) or _twelvedata_quote(symbol)
+        else:
+            q = _twelvedata_quote(symbol) or _upstox_quote(symbol)
+        if not q:
+            q = _mock_quote(symbol)
+            used_mock = True
+
+        indices_fallback.append({
+            "name": it["name"],
+            "value": round(float(q["value"]), 2),
+            "change": round(float(q["change"]), 2),
+            "changePercentage": round(float(q["changePercentage"]), 2),
+        })
+
+    trending_fallback = []
+    for it in trending:
+        symbol = it["symbol"]
+        q = _twelvedata_quote(symbol) or _upstox_quote(symbol)
+        if not q:
+            q = _mock_quote(symbol)
+            used_mock = True
+
+        trending_fallback.append({
+            "name": it["name"],
+            "symbol": it["symbol"],
+            "value": round(float(q["value"]), 2),
+            "change": round(float(q["change"]), 2),
+            "changePercentage": round(float(q["changePercentage"]), 2),
+        })
+
     return jsonify({
-        "error": "Failed to fetch market overview from providers",
-        "indicesCount": len(indices_out),
-        "trendingCount": len(trending_out),
-        "twelvedataConfigured": bool(TWELVEDATA_API_KEY),
-        "upstoxConfigured": bool(UPSTOX_ACCESS_TOKEN),
-        "missingSymbols": missing,
-    }), 503
+        "status": "ok",
+        "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
+        "indices": indices_fallback,
+        "trendingStocks": trending_fallback,
+        "dataSource": "mock" if used_mock else "twelvedata_upstox",
+        "providerFallback": True,
+        "providerDiagnostics": {
+            "indicesCount": len(indices_out),
+            "trendingCount": len(trending_out),
+            "twelvedataConfigured": bool(TWELVEDATA_API_KEY),
+            "upstoxConfigured": bool(UPSTOX_ACCESS_TOKEN),
+            "missingSymbols": missing,
+            "upstoxInstrumentMapConfigured": bool(instrument_map),
+        },
+    }), 200
 
 
 @app.route('/predict', methods=['POST'])
