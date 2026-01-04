@@ -461,7 +461,7 @@ export function exportToCSV(holdings: HoldingWithTax[]): string {
 /**
  * Save holdings to localStorage
  */
-export function saveHoldingsToStorage(holdings: any[], storageKey: string = 'tax_optimization_holdings'): void {
+export function saveHoldingsToStorage<T>(holdings: T[], storageKey: string = 'tax_optimization_holdings'): void {
   try {
     localStorage.setItem(storageKey, JSON.stringify(holdings));
   } catch (error) {
@@ -472,10 +472,13 @@ export function saveHoldingsToStorage(holdings: any[], storageKey: string = 'tax
 /**
  * Load holdings from localStorage
  */
-export function loadHoldingsFromStorage(storageKey: string = 'tax_optimization_holdings'): any[] | null {
+export function loadHoldingsFromStorage<T>(storageKey: string = 'tax_optimization_holdings'): T[] | null {
   try {
     const data = localStorage.getItem(storageKey);
-    return data ? JSON.parse(data) : null;
+    if (!data) return null;
+
+    const parsed: unknown = JSON.parse(data);
+    return Array.isArray(parsed) ? (parsed as T[]) : null;
   } catch (error) {
     console.error('Failed to load holdings:', error);
     return null;

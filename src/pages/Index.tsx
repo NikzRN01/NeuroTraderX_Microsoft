@@ -22,6 +22,41 @@ interface NewsItem {
   url?: string;
 }
 
+type RawNewsApiItem = {
+  title?: unknown;
+  description?: unknown;
+  pubDate?: unknown;
+  link?: unknown;
+};
+
+const asString = (value: unknown, fallback: string) =>
+  typeof value === "string" ? value : fallback;
+
+const formatPubDate = (value: unknown) => {
+  if (value instanceof Date) {
+    return value.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+  }
+
+  return "Recently";
+};
+
 const Dashboard = () => {
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
@@ -38,19 +73,14 @@ const Dashboard = () => {
         if (!cancelled && data) {
           // API returns { body: [...], meta: {...} }
           const newsArray = data.body || data;
-          const transformedNews = Array.isArray(newsArray) ? newsArray.map((item: any, index: number) => ({
+          const transformedNews = Array.isArray(newsArray) ? newsArray.map((item: RawNewsApiItem, index: number) => ({
             id: index + 1,
-            title: item.title || 'No title',
-            description: item.description || '',
+            title: asString(item.title, 'No title'),
+            description: asString(item.description, ''),
             source: 'Yahoo Finance', // API doesn't provide source, using default
-            time: item.pubDate ? new Date(item.pubDate).toLocaleString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              hour: 'numeric', 
-              minute: '2-digit' 
-            }) : 'Recently',
+            time: formatPubDate(item.pubDate),
             category: 'Markets',
-            url: item.link || '#'
+            url: asString(item.link, '#')
           })) : [];
           setNewsItems(transformedNews.slice(0, 5));
         }
