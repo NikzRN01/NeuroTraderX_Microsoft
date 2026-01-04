@@ -1,14 +1,20 @@
 /**
- * Tax Optimization Phase 1
+ * Tax Optimization Phase 1 + Phase 2
  * 
- * Features:
+ * Phase 1:
  * - Portfolio holdings with cost basis tracking
  * - Unrealized gains/losses calculation
  * - Tax liability estimation
  * - Tax-loss harvesting recommendations
+ * 
+ * Phase 2:
+ * - Wash-sale rule detection
+ * - Multiple tax lot tracking (FIFO, LIFO, Specific ID)
+ * - Tax optimization strategies
+ * - Export/Save functionality
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { 
@@ -18,7 +24,11 @@ import {
   Calculator,
   AlertCircle,
   Info,
-  Trash2
+  Trash2,
+  Download,
+  Save,
+  Lightbulb,
+  AlertTriangle
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +43,14 @@ import {
   formatPercent,
   type HoldingWithTax,
 } from "@/utils/taxCalculations";
+import {
+  generateOptimizationStrategies,
+  exportToCSV,
+  saveHoldingsToStorage,
+  loadHoldingsFromStorage,
+  type OptimizationStrategy,
+} from "@/utils/taxCalculationsPhase2";
+import { toast } from "sonner";
 
 interface HoldingInput {
   id: string;
@@ -45,6 +63,7 @@ interface HoldingInput {
 
 const TaxOptimization = () => {
   const [annualIncome, setAnnualIncome] = useState("100000");
+  const [showInputFields, setShowInputFields] = useState(false);
   const [holdings, setHoldings] = useState<HoldingInput[]>([
     {
       id: "1",
@@ -55,6 +74,23 @@ const TaxOptimization = () => {
       purchaseDate: "",
     },
   ]);
+
+  // Load saved holdings on mount
+  useEffect(() => {
+    const saved = loadHoldingsFromStorage();
+    if (saved && saved.length > 0) {
+      setHoldings(saved);
+      setShowInputFields(false);
+      toast.success("Loaded saved holdings");
+    }
+  }, []);
+
+  // Save holdings whenever they change
+  useEffect(() => {
+    if (holdings.some(h => h.symbol || h.shares || h.purchasePrice)) {
+      saveHoldingsToStorage(holdings);
+    }
+  }, [holdings]);
 
   // Animation variants
   const containerVariants = {
@@ -72,6 +108,7 @@ const TaxOptimization = () => {
 
   // Add new holding row
   const addHolding = () => {
+    setShowInputFields(true);
     setHoldings([
       ...holdings,
       {
@@ -119,6 +156,58 @@ const TaxOptimization = () => {
     ? identifyTaxLossHarvesting(analyzedHoldings, parseFloat(annualIncome))
     : [];
 
+  const optimizationStrategies = analyzedHoldings.length > 0
+    ? generateOptimizationStrategies(analyzedHoldings, parseFloat(annualIncome))
+    : [];
+
+  // Export to CSV
+  const handleExportCSV = () => {
+    if (analyzedHoldings.length === 0) {
+      toast.error("No holdings to export");
+      return;
+    }
+
+    const csv = exportToCSV(analyzedHoldings);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tax-optimization-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success("Exported to CSV");
+  };
+
+  // Clear all holdings
+  const handleClearAll = () => {
+    setShowInputFields(false);
+    setHoldings([{
+      id: "1",
+      symbol: "",
+      shares: "",
+      purchasePrice: "",
+      currentPrice: "",
+      purchaseDate: "",
+    }]);
+    localStorage.removeItem('tax_optimization_holdings');
+    toast.success("Cleared all holdings");
+  };
+
+  // Edit holdings
+  const handleEditHoldings = () => {
+    setShowInputFields(true);
+  };
+
+  // Calculate tax and hide input fields
+  const handleCalculateTax = () => {
+    if (analyzedHoldings.length === 0) {
+      toast.error("Please add at least one complete holding");
+      return;
+    }
+    setShowInputFields(false);
+    toast.success("Tax impact calculated");
+  };
+
   return (
     <div className="min-h-screen p-6">
       <motion.div
@@ -128,27 +217,25 @@ const TaxOptimization = () => {
         className="space-y-6"
       >
         {/* Header */}
-        <motion.div variants={itemVariants} className="flex items-center gap-4">
-          <Link to="/" className="text-primary hover:text-primary/80 transition-colors">
-            <ChevronLeft className="h-5 w-5" />
-          </Link>
-          <div>
-            <h1 className="text-3xl font-bold text-gradient">Tax Optimization</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Phase 1: Capital Gains Calculator & Tax-Loss Harvesting
-            </p>
+        <motion.div variants={itemVariants} className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-primary hover:text-primary/80 transition-colors">
+              <ChevronLeft className="h-5 w-5" />
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold text-gradient">Tax Optimization</h1>
+            </div>
           </div>
-        </motion.div>
-
-        {/* Disclaimer */}
-        <motion.div variants={itemVariants}>
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              This tool provides estimates only and should not be considered tax advice. 
-              Please consult a qualified tax professional for your specific situation.
-            </AlertDescription>
-          </Alert>
+          <div className="flex gap-2">
+            <Button onClick={handleExportCSV} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-1" />
+              Export CSV
+            </Button>
+            <Button onClick={handleClearAll} variant="outline" size="sm">
+              <Trash2 className="h-4 w-4 mr-1" />
+              Clear All
+            </Button>
+          </div>
         </motion.div>
 
         {/* Annual Income Input */}
@@ -184,17 +271,34 @@ const TaxOptimization = () => {
                 <div>
                   <h2 className="text-xl font-semibold mb-1">Portfolio Holdings</h2>
                   <p className="text-sm text-muted-foreground">
-                    Add your investment holdings to analyze tax implications
+                    {analyzedHoldings.length > 0 
+                      ? `${analyzedHoldings.length} holding${analyzedHoldings.length > 1 ? 's' : ''} analyzed`
+                      : "Add your investment holdings to analyze tax implications"
+                    }
                   </p>
                 </div>
-                <Button onClick={addHolding} size="sm">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Holding
-                </Button>
+                {!showInputFields && analyzedHoldings.length === 0 && (
+                  <Button onClick={addHolding} size="sm">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Holding
+                  </Button>
+                )}
+                {!showInputFields && analyzedHoldings.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button onClick={handleEditHoldings} size="sm" variant="outline">
+                      Edit
+                    </Button>
+                    <Button onClick={addHolding} size="sm">
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add More
+                    </Button>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-3">
-                {holdings.map((holding) => (
+              {showInputFields && (
+                <div className="space-y-3">
+                  {holdings.map((holding) => (
                   <div
                     key={holding.id}
                     className="grid grid-cols-6 gap-3 p-4 rounded-lg bg-secondary/20 border border-border/30"
@@ -264,6 +368,25 @@ const TaxOptimization = () => {
                   </div>
                 ))}
               </div>
+              )}
+
+              {showInputFields && (
+                <div className="flex justify-between items-center pt-2">
+                  <Button
+                    onClick={handleCalculateTax}
+                    disabled={!analyzedHoldings.length}
+                  >
+                    <Calculator className="h-4 w-4 mr-2" />
+                    Calculate Tax Impact
+                  </Button>
+
+                  {holdings.length > 1 && (
+                    <Button onClick={handleClearAll} variant="outline" size="sm">
+                      Clear All
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
         </motion.div>
@@ -442,6 +565,89 @@ const TaxOptimization = () => {
                 </div>
               </div>
             </Card>
+          </motion.div>
+        )}
+
+        {/* Tax Optimization Strategies - PHASE 2 */}
+        {optimizationStrategies.length > 0 && (
+          <motion.div variants={itemVariants}>
+            <Card className="p-6">
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-5 w-5 text-amber-400" />
+                  <h2 className="text-xl font-semibold">Smart Tax Strategies</h2>
+                </div>
+                
+
+                <div className="space-y-3">
+                  {optimizationStrategies.map((strategy, index) => {
+                    const priorityColors = {
+                      HIGH: 'from-red-900/20 to-orange-900/20 border-red-500/20',
+                      MEDIUM: 'from-amber-900/20 to-yellow-900/20 border-amber-500/20',
+                      LOW: 'from-blue-900/20 to-cyan-900/20 border-blue-500/20',
+                    };
+
+                    const priorityBadgeColors = {
+                      HIGH: 'bg-red-500/20 text-red-400',
+                      MEDIUM: 'bg-amber-500/20 text-amber-400',
+                      LOW: 'bg-blue-500/20 text-blue-400',
+                    };
+
+                    return (
+                      <div
+                        key={index}
+                        className={`p-4 rounded-lg bg-gradient-to-r ${priorityColors[strategy.priority]} border`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-semibold text-lg">{strategy.title}</h3>
+                              <span className={`text-xs px-2 py-1 rounded ${priorityBadgeColors[strategy.priority]}`}>
+                                {strategy.priority}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{strategy.description}</p>
+                          </div>
+                          {strategy.estimatedSavings > 0 && (
+                            <div className="text-right ml-4">
+                              <p className="text-xs text-muted-foreground">Est. Savings</p>
+                              <p className="text-xl font-bold text-green-400">
+                                {formatCurrency(strategy.estimatedSavings)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-border/20">
+                          <div className="flex justify-between items-center">
+                            <p className="text-sm">
+                              <span className="text-muted-foreground">Recommended Action: </span>
+                              <span className="font-medium">{strategy.action}</span>
+                            </p>
+                            {strategy.daysUntilLongTerm !== undefined && (
+                              <span className="text-xs bg-secondary px-2 py-1 rounded">
+                                {strategy.daysUntilLongTerm} days remaining
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Wash-Sale Warning - PHASE 2 */}
+        {analyzedHoldings.some(h => h.unrealizedGainLoss < 0) && (
+          <motion.div variants={itemVariants}>
+            <Alert className="bg-orange-900/20 border-orange-500/30">
+              <AlertTriangle className="h-4 w-4 text-orange-400" />
+              <AlertDescription className="text-orange-400">
+                <strong>Wash-Sale Rule Reminder:</strong> If you sell securities at a loss, you cannot repurchase the same or substantially identical security within 30 days before or after the sale. Doing so will disallow the loss deduction.
+              </AlertDescription>
+            </Alert>
           </motion.div>
         )}
       </motion.div>

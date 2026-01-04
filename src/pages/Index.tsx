@@ -156,22 +156,20 @@ const Dashboard = () => {
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <GlassCard className="bg-gradient-to-br from-amber-900/40 to-red-900/40 border-amber-500/20">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-amber-500/20 p-3">
-                  <ShieldCheck className="h-6 w-6 text-amber-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium">Tax Optimization</h3>
-                  <p className="text-sm text-muted-foreground">Find tax-saving opportunities</p>
-                </div>
+          <GlassCard className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/40 dark:to-red-900/40 border-amber-300 dark:border-amber-500/20">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-amber-200 dark:bg-amber-500/20 p-3">
+                <ShieldCheck className="h-6 w-6 text-amber-700 dark:text-amber-400" />
               </div>
-              <Link to="/tax-optimization" className="mt-4 w-full rounded-lg bg-amber-500/20 py-2 text-amber-400 hover:bg-amber-500/30 transition-colors block text-center">
-                Optimize Taxes
-              </Link>
-            </GlassCard>
-          </div>
+              <div>
+                <h3 className="text-lg font-medium text-amber-900 dark:text-white">Tax Optimization</h3>
+                <p className="text-sm text-amber-700 dark:text-muted-foreground">Find tax-saving opportunities</p>
+              </div>
+            </div>
+            <Link to="/tax-optimization" className="mt-4 w-full rounded-lg bg-amber-200 hover:bg-amber-300 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 py-2 text-amber-800 dark:text-amber-400 transition-colors block text-center font-medium">
+              Optimize Taxes
+            </Link>
+          </GlassCard>
         </motion.div>
       </motion.div>
     </div>
