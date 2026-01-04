@@ -27,6 +27,9 @@ CACHE_DURATION = 3600  # 1 hour in seconds
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
+# Database Configuration
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///neurotradx.db')
+
 def is_cache_valid(ticker):
     """Check if cached data is still valid"""
     if ticker not in stock_cache:
@@ -155,9 +158,14 @@ CORS(app, resources={
     }
 })
 
-# Set up database URI (using SQLite for simplicity)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///neurotradx.db'  # Change to PostgreSQL/MySQL in production
+# Set up database URI (PostgreSQL for production, SQLite fallback)
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_size': 10,
+    'pool_recycle': 3600,
+    'pool_pre_ping': True,  # Verify connections before using
+}
 db = SQLAlchemy(app)
 
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
@@ -165,12 +173,39 @@ STEADY_API_TOKEN = os.getenv('STEADY_API_TOKEN')
 
 # Models
 class User(db.Model):
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
+    username = db.Column(db.String(100), unique=True, nullable=False, index=True)
     password = db.Column(db.String(100), nullable=False)
     financial_goal = db.Column(db.String(200), nullable=True)
     risk_tolerance = db.Column(db.String(100), nullable=True)
     investment_preference = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    portfolios = db.relationship('Portfolio', backref='user', lazy=True, cascade='all, delete-orphan')
+    watchlists = db.relationship('Watchlist', backref='user', lazy=True, cascade='all, delete-orphan')
+
+class Portfolio(db.Model):
+    __tablename__ = 'portfolios'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    ticker = db.Column(db.String(10), nullable=False)
+    quantity = db.Column(db.Float, nullable=False)
+    purchase_price = db.Column(db.Float, nullable=False)
+    purchase_date = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Watchlist(db.Model):
+    __tablename__ = 'watchlists'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    ticker = db.Column(db.String(10), nullable=False)
+    target_price = db.Column(db.Float, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # Initialize the database
 with app.app_context():
