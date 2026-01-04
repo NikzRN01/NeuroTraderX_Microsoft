@@ -27,6 +27,10 @@ CACHE_DURATION = 3600  # 1 hour in seconds
 # API Keys
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
 TWELVEDATA_API_KEY = os.getenv('TWELVEDATA_API_KEY', '')
+UPSTOX_ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', '')
+# JSON mapping from your app symbols to Upstox instrument keys.
+# Example: {"NIFTY50":"NSE_INDEX|Nifty 50","SENSEX":"BSE_INDEX|SENSEX"}
+UPSTOX_INSTRUMENT_MAP = os.getenv('UPSTOX_INSTRUMENT_MAP', '')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
 # Database Configuration
@@ -748,39 +752,23 @@ def fetch_market_data():
 def market_data_overview():
     """Market overview endpoint.
 
-    Returns real-time quotes via Finnhub.
+    Returns quotes via Twelve Data, with per-symbol fallback to Upstox V2.
 
-    If Finnhub is not configured or data cannot be fetched, this endpoint returns a
-    non-200 response so the frontend can fall back to its local mock dataset.
+    Order:
+      1) Twelve Data for all symbols
+      2) Upstox V2 ONLY for symbols that Twelve Data couldn't fetch
+      3) If still insufficient, return non-200 so the frontend can fall back to mockData.ts
     """
 
-    def _finnhub_quote(symbol: str):
-        if not FINNHUB_API_KEY:
-            return None
+    def _load_upstox_instrument_map():
+        raw = (UPSTOX_INSTRUMENT_MAP or "").strip()
+        if not raw:
+            return {}
         try:
-            r = requests.get(
-                "https://finnhub.io/api/v1/quote",
-                params={"symbol": symbol, "token": FINNHUB_API_KEY},
-                timeout=10,
-            )
-            if r.status_code != 200:
-                return None
-            q = r.json() if isinstance(r.json(), dict) else None
-            if not q:
-                return None
-            # Finnhub quote fields: c=current, d=change, dp=percent change
-            c = q.get("c")
-            d = q.get("d")
-            dp = q.get("dp")
-            if c is None or dp is None:
-                return None
-            return {
-                "value": float(c),
-                "change": float(d) if d is not None else 0.0,
-                "changePercentage": float(dp),
-            }
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
         except Exception:
-            return None
+            return {}
 
     def _twelvedata_quote(symbol: str):
         if not TWELVEDATA_API_KEY:
@@ -818,16 +806,68 @@ def market_data_overview():
         except Exception:
             return None
 
-    # NOTE: With many Finnhub plans, true index-level symbols (e.g. SPX/NDX) are
-    # restricted. We therefore use well-known proxies that are available:
-    # - SPY/QQQ/DIA as liquid ETFs for US indices
-    # - DAX/CAC as additional indices available on this plan
+    def _upstox_quote(symbol: str):
+        if not UPSTOX_ACCESS_TOKEN:
+            return None
+        instrument_map = _load_upstox_instrument_map()
+        instrument_key = instrument_map.get(symbol)
+        if not instrument_key:
+            return None
+
+        try:
+            r = requests.get(
+                "https://api.upstox.com/v2/market-quote/ltp",
+                params={"instrument_key": instrument_key},
+                headers={
+                    "Authorization": f"Bearer {UPSTOX_ACCESS_TOKEN}",
+                    "Accept": "application/json",
+                },
+                timeout=10,
+            )
+            if r.status_code != 200:
+                return None
+            payload = r.json() if isinstance(r.json(), dict) else None
+            if not payload:
+                return None
+            if str(payload.get("status", "")).lower() not in ("success", "ok"):
+                return None
+
+            data = payload.get("data")
+            if not isinstance(data, dict) or not data:
+                return None
+
+            entry = data.get(instrument_key)
+            if entry is None:
+                # Some responses use a single nested object; fall back to first value.
+                entry = next(iter(data.values()), None)
+            if not isinstance(entry, dict):
+                return None
+
+            lp = entry.get("last_price")
+            if lp in (None, ""):
+                lp = entry.get("ltp")
+            if lp in (None, ""):
+                return None
+
+            value = float(lp)
+            return {
+                "value": value,
+                # Upstox LTP endpoint may not include change/percent reliably.
+                "change": 0.0,
+                "changePercentage": 0.0,
+            }
+        except Exception:
+            return None
+
+    # Show exactly: SPY / QQQ / DIA / NIFTY / SENSEX
+    # - US ETFs come from Twelve Data (preferred)
+    # - Indian indices come from Upstox (preferred) via UPSTOX_INSTRUMENT_MAP
     index_proxies = [
-        {"name": "S&P 500 (SPY)", "symbol": "SPY"},
-        {"name": "Nasdaq 100 (QQQ)", "symbol": "QQQ"},
-        {"name": "Dow Jones (DIA)", "symbol": "DIA"},
-        {"name": "DAX", "symbol": "DAX"},
-        {"name": "CAC 40", "symbol": "CAC"},
+        {"name": "S&P 500 (SPY)", "symbol": "SPY", "preferred": "twelvedata"},
+        {"name": "Nasdaq 100 (QQQ)", "symbol": "QQQ", "preferred": "twelvedata"},
+        {"name": "Dow Jones (DIA)", "symbol": "DIA", "preferred": "twelvedata"},
+        {"name": "Russell 2000 (IWM)", "symbol": "IWM", "preferred": "twelvedata"},
+        {"name": "Nifty 50", "symbol": "NIFTY50", "preferred": "upstox"},
     ]
 
     trending = [
@@ -837,12 +877,21 @@ def market_data_overview():
         {"name": "Tesla", "symbol": "TSLA"},
     ]
 
-    def _build_overview(quote_fn, indices_input, trending_input):
+    def _build_overview(indices_input, trending_input):
         indices_out_local = []
         trending_out_local = []
+        missing_symbols = []
+
+        instrument_map = _load_upstox_instrument_map()
 
         for it in indices_input:
-            q = quote_fn(it["symbol"])
+            symbol = it["symbol"]
+            preferred = it.get("preferred")
+            # Prefer Upstox for Indian indices, Twelve Data for US ETFs.
+            if preferred == "upstox":
+                q = _upstox_quote(symbol) or _twelvedata_quote(symbol)
+            else:
+                q = _twelvedata_quote(symbol) or _upstox_quote(symbol)
             if q:
                 indices_out_local.append({
                     "name": it["name"],
@@ -850,9 +899,17 @@ def market_data_overview():
                     "change": round(q["change"], 2),
                     "changePercentage": round(q["changePercentage"], 2),
                 })
+            else:
+                missing_symbols.append({
+                    "symbol": symbol,
+                    "hasUpstoxMapping": bool(instrument_map.get(symbol)),
+                })
 
         for it in trending_input:
-            q = quote_fn(it["symbol"])
+            symbol = it["symbol"]
+            q = _twelvedata_quote(symbol)
+            if not q:
+                q = _upstox_quote(symbol)
             if q:
                 trending_out_local.append({
                     "name": it["name"],
@@ -861,45 +918,32 @@ def market_data_overview():
                     "change": round(q["change"], 2),
                     "changePercentage": round(q["changePercentage"], 2),
                 })
+            else:
+                missing_symbols.append({
+                    "symbol": symbol,
+                    "hasUpstoxMapping": bool(instrument_map.get(symbol)),
+                })
 
-        return indices_out_local, trending_out_local
+        return indices_out_local, trending_out_local, missing_symbols
 
-    attempted = []
-
-    # 1) Finnhub (primary)
-    if FINNHUB_API_KEY:
-        indices_out, trending_out = _build_overview(_finnhub_quote, index_proxies, trending)
-        attempted.append({"provider": "finnhub", "indicesCount": len(indices_out), "trendingCount": len(trending_out)})
-        if len(indices_out) >= 3 and trending_out:
-            return jsonify({
-                "status": "ok",
-                "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
-                "indices": indices_out,
-                "trendingStocks": trending_out,
-                "dataSource": "finnhub",
-            }), 200
-
-    # 2) Twelve Data (secondary fallback)
-    # Keep the index list conservative here: US ETF proxies are most likely to work on free tier.
-    if TWELVEDATA_API_KEY:
-        td_indices = index_proxies[:3]
-        indices_out, trending_out = _build_overview(_twelvedata_quote, td_indices, trending)
-        attempted.append({"provider": "twelvedata", "indicesCount": len(indices_out), "trendingCount": len(trending_out)})
-        if len(indices_out) >= 3 and trending_out:
-            return jsonify({
-                "status": "ok",
-                "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
-                "indices": indices_out,
-                "trendingStocks": trending_out,
-                "dataSource": "twelvedata",
-            }), 200
+    indices_out, trending_out, missing = _build_overview(index_proxies, trending)
+    if len(indices_out) >= 3 and trending_out:
+        return jsonify({
+            "status": "ok",
+            "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
+            "indices": indices_out,
+            "trendingStocks": trending_out,
+            "dataSource": "twelvedata_upstox",
+        }), 200
 
     # If we can't fetch enough data, surface a non-200 so the frontend uses mockData.ts.
     return jsonify({
         "error": "Failed to fetch market overview from providers",
-        "providersTried": attempted,
-        "finnhubConfigured": bool(FINNHUB_API_KEY),
+        "indicesCount": len(indices_out),
+        "trendingCount": len(trending_out),
         "twelvedataConfigured": bool(TWELVEDATA_API_KEY),
+        "upstoxConfigured": bool(UPSTOX_ACCESS_TOKEN),
+        "missingSymbols": missing,
     }), 503
 
 
