@@ -134,9 +134,20 @@ const TaxOptimization = () => {
     );
   };
 
+  // Helper function to validate complete date (YYYY-MM-DD format)
+  const isValidDate = (dateString: string): boolean => {
+    if (!dateString) return false;
+    // Check if the date string matches the full YYYY-MM-DD format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString)) return false;
+    // Verify it's a valid date
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+  };
+
   // Parse and analyze holdings
   const analyzedHoldings: HoldingWithTax[] = holdings
-    .filter(h => h.symbol && h.shares && h.purchasePrice && h.currentPrice && h.purchaseDate)
+    .filter(h => h.symbol && h.shares && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate))
     .map(h => 
       analyzeHolding(
         h.symbol.toUpperCase(),
@@ -230,10 +241,6 @@ const TaxOptimization = () => {
             <Button onClick={handleExportCSV} variant="outline" size="sm">
               <Download className="h-4 w-4 mr-1" />
               Export CSV
-            </Button>
-            <Button onClick={handleClearAll} variant="outline" size="sm">
-              <Trash2 className="h-4 w-4 mr-1" />
-              Clear All
             </Button>
           </div>
         </motion.div>
@@ -403,25 +410,25 @@ const TaxOptimization = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Net Gain/Loss */}
-                  <div className="p-4 rounded-lg bg-gradient-to-br from-blue-900/40 to-purple-900/40 border border-blue-500/20">
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-blue-500/10 to-purple-500/10 dark:from-blue-900/40 dark:to-purple-900/40 border border-blue-500/30 dark:border-blue-500/20">
                     <p className="text-sm text-muted-foreground mb-1">Net Gain/Loss</p>
-                    <p className={`text-2xl font-bold ${taxSummary.netGainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <p className={`text-2xl font-bold ${taxSummary.netGainLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       {formatCurrency(taxSummary.netGainLoss)}
                     </p>
                   </div>
 
                   {/* Estimated Tax Liability */}
-                  <div className="p-4 rounded-lg bg-gradient-to-br from-red-900/40 to-orange-900/40 border border-red-500/20">
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-red-500/10 to-orange-500/10 dark:from-red-900/40 dark:to-orange-900/40 border border-red-500/30 dark:border-red-500/20">
                     <p className="text-sm text-muted-foreground mb-1">Estimated Tax</p>
-                    <p className="text-2xl font-bold text-red-400">
+                    <p className="text-2xl font-bold text-red-600 dark:text-red-400">
                       {formatCurrency(taxSummary.estimatedTaxLiability)}
                     </p>
                   </div>
 
                   {/* Potential Tax Savings */}
-                  <div className="p-4 rounded-lg bg-gradient-to-br from-green-900/40 to-emerald-900/40 border border-green-500/20">
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-green-500/10 to-emerald-500/10 dark:from-green-900/40 dark:to-emerald-900/40 border border-green-500/30 dark:border-green-500/20">
                     <p className="text-sm text-muted-foreground mb-1">Potential Savings</p>
-                    <p className="text-2xl font-bold text-green-400">
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                       {formatCurrency(taxSummary.potentialTaxSavings)}
                     </p>
                   </div>
@@ -434,11 +441,11 @@ const TaxOptimization = () => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span>Gains:</span>
-                        <span className="text-green-400">{formatCurrency(taxSummary.shortTermGains)}</span>
+                        <span className="text-green-600 dark:text-green-400">{formatCurrency(taxSummary.shortTermGains)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span>Losses:</span>
-                        <span className="text-red-400">{formatCurrency(taxSummary.shortTermLosses)}</span>
+                        <span className="text-red-600 dark:text-red-400">{formatCurrency(taxSummary.shortTermLosses)}</span>
                       </div>
                     </div>
                   </div>
@@ -447,11 +454,11 @@ const TaxOptimization = () => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span>Gains:</span>
-                        <span className="text-green-400">{formatCurrency(taxSummary.longTermGains)}</span>
+                        <span className="text-green-600 dark:text-green-400">{formatCurrency(taxSummary.longTermGains)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span>Losses:</span>
-                        <span className="text-red-400">{formatCurrency(taxSummary.longTermLosses)}</span>
+                        <span className="text-red-600 dark:text-red-400">{formatCurrency(taxSummary.longTermLosses)}</span>
                       </div>
                     </div>
                   </div>
@@ -487,12 +494,12 @@ const TaxOptimization = () => {
                         <td className="py-3 px-2 text-right">{holding.shares}</td>
                         <td className="py-3 px-2 text-right">{formatCurrency(holding.costBasis)}</td>
                         <td className="py-3 px-2 text-right">{formatCurrency(holding.currentValue)}</td>
-                        <td className={`py-3 px-2 text-right ${holding.unrealizedGainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <td className={`py-3 px-2 text-right ${holding.unrealizedGainLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {formatCurrency(holding.unrealizedGainLoss)}
                           <span className="text-xs ml-1">({formatPercent(holding.unrealizedGainLossPercent)})</span>
                         </td>
                         <td className="py-3 px-2 text-center">
-                          <span className={`text-xs px-2 py-1 rounded ${holding.isLongTerm ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                          <span className={`text-xs px-2 py-1 rounded ${holding.isLongTerm ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400' : 'bg-orange-500/20 text-orange-700 dark:text-orange-400'}`}>
                             {holding.isLongTerm ? 'Long' : 'Short'}
                           </span>
                         </td>
@@ -513,13 +520,13 @@ const TaxOptimization = () => {
             <Card className="p-6">
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <TrendingDown className="h-5 w-5 text-green-400" />
+                  <TrendingDown className="h-5 w-5 text-green-600 dark:text-green-400" />
                   <h2 className="text-xl font-semibold">Tax-Loss Harvesting Opportunities</h2>
                 </div>
                 
-                <Alert className="bg-green-900/20 border-green-500/30">
-                  <AlertCircle className="h-4 w-4 text-green-400" />
-                  <AlertDescription className="text-green-400">
+                <Alert className="bg-green-500/10 dark:bg-green-900/20 border-green-500/40 dark:border-green-500/30">
+                  <AlertCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <AlertDescription className="text-green-700 dark:text-green-400">
                     You can harvest losses to offset capital gains and reduce your tax liability. 
                     Remember the wash-sale rule: don't repurchase the same security within 30 days.
                   </AlertDescription>
@@ -529,7 +536,7 @@ const TaxOptimization = () => {
                   {harvestingOpportunities.map((opp, index) => (
                     <div
                       key={index}
-                      className="p-4 rounded-lg bg-gradient-to-r from-green-900/20 to-emerald-900/20 border border-green-500/20"
+                      className="p-4 rounded-lg bg-gradient-to-r from-green-500/10 to-emerald-500/10 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-500/30 dark:border-green-500/20"
                     >
                       <div className="flex justify-between items-start">
                         <div>
@@ -541,7 +548,7 @@ const TaxOptimization = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Potential Tax Savings</p>
-                          <p className="text-2xl font-bold text-green-400">
+                          <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                             {formatCurrency(opp.potentialTaxSavings)}
                           </p>
                         </div>
@@ -553,7 +560,7 @@ const TaxOptimization = () => {
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Unrealized Loss</p>
-                          <p className="font-medium text-red-400">{formatCurrency(opp.unrealizedLoss)}</p>
+                          <p className="font-medium text-red-600 dark:text-red-400">{formatCurrency(opp.unrealizedLoss)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Current Value</p>
@@ -574,7 +581,7 @@ const TaxOptimization = () => {
             <Card className="p-6">
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <Lightbulb className="h-5 w-5 text-amber-400" />
+                  <Lightbulb className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                   <h2 className="text-xl font-semibold">Smart Tax Strategies</h2>
                 </div>
                 
@@ -582,15 +589,15 @@ const TaxOptimization = () => {
                 <div className="space-y-3">
                   {optimizationStrategies.map((strategy, index) => {
                     const priorityColors = {
-                      HIGH: 'from-red-900/20 to-orange-900/20 border-red-500/20',
-                      MEDIUM: 'from-amber-900/20 to-yellow-900/20 border-amber-500/20',
-                      LOW: 'from-blue-900/20 to-cyan-900/20 border-blue-500/20',
+                      HIGH: 'from-red-500/10 to-orange-500/10 dark:from-red-900/20 dark:to-orange-900/20 border-red-500/30 dark:border-red-500/20',
+                      MEDIUM: 'from-amber-500/10 to-yellow-500/10 dark:from-amber-900/20 dark:to-yellow-900/20 border-amber-500/30 dark:border-amber-500/20',
+                      LOW: 'from-blue-500/10 to-cyan-500/10 dark:from-blue-900/20 dark:to-cyan-900/20 border-blue-500/30 dark:border-blue-500/20',
                     };
 
                     const priorityBadgeColors = {
-                      HIGH: 'bg-red-500/20 text-red-400',
-                      MEDIUM: 'bg-amber-500/20 text-amber-400',
-                      LOW: 'bg-blue-500/20 text-blue-400',
+                      HIGH: 'bg-red-500/20 text-red-700 dark:text-red-400',
+                      MEDIUM: 'bg-amber-500/20 text-amber-700 dark:text-amber-400',
+                      LOW: 'bg-blue-500/20 text-blue-700 dark:text-blue-400',
                     };
 
                     return (
@@ -611,7 +618,7 @@ const TaxOptimization = () => {
                           {strategy.estimatedSavings > 0 && (
                             <div className="text-right ml-4">
                               <p className="text-xs text-muted-foreground">Est. Savings</p>
-                              <p className="text-xl font-bold text-green-400">
+                              <p className="text-xl font-bold text-green-600 dark:text-green-400">
                                 {formatCurrency(strategy.estimatedSavings)}
                               </p>
                             </div>
@@ -642,9 +649,9 @@ const TaxOptimization = () => {
         {/* Wash-Sale Warning - PHASE 2 */}
         {analyzedHoldings.some(h => h.unrealizedGainLoss < 0) && (
           <motion.div variants={itemVariants}>
-            <Alert className="bg-orange-900/20 border-orange-500/30">
-              <AlertTriangle className="h-4 w-4 text-orange-400" />
-              <AlertDescription className="text-orange-400">
+            <Alert className="bg-orange-500/10 dark:bg-orange-900/20 border-orange-500/40 dark:border-orange-500/30">
+              <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              <AlertDescription className="text-orange-700 dark:text-orange-400">
                 <strong>Wash-Sale Rule Reminder:</strong> If you sell securities at a loss, you cannot repurchase the same or substantially identical security within 30 days before or after the sale. Doing so will disallow the loss deduction.
               </AlertDescription>
             </Alert>
