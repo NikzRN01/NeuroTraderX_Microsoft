@@ -26,6 +26,7 @@ CACHE_DURATION = 3600  # 1 hour in seconds
 
 # API Keys
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
+TWELVEDATA_API_KEY = os.getenv('TWELVEDATA_API_KEY', '')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
 # Database Configuration
@@ -745,12 +746,161 @@ def fetch_market_data():
 
 @app.route('/market-data', methods=['GET'])
 def market_data_overview():
-    """Small overview endpoint (used by the frontend service wrapper)."""
-    # Keep this lightweight; callers can use /fetch_data for specifics.
+    """Market overview endpoint.
+
+    Returns real-time quotes via Finnhub.
+
+    If Finnhub is not configured or data cannot be fetched, this endpoint returns a
+    non-200 response so the frontend can fall back to its local mock dataset.
+    """
+
+    def _finnhub_quote(symbol: str):
+        if not FINNHUB_API_KEY:
+            return None
+        try:
+            r = requests.get(
+                "https://finnhub.io/api/v1/quote",
+                params={"symbol": symbol, "token": FINNHUB_API_KEY},
+                timeout=10,
+            )
+            if r.status_code != 200:
+                return None
+            q = r.json() if isinstance(r.json(), dict) else None
+            if not q:
+                return None
+            # Finnhub quote fields: c=current, d=change, dp=percent change
+            c = q.get("c")
+            d = q.get("d")
+            dp = q.get("dp")
+            if c is None or dp is None:
+                return None
+            return {
+                "value": float(c),
+                "change": float(d) if d is not None else 0.0,
+                "changePercentage": float(dp),
+            }
+        except Exception:
+            return None
+
+    def _twelvedata_quote(symbol: str):
+        if not TWELVEDATA_API_KEY:
+            return None
+        try:
+            r = requests.get(
+                "https://api.twelvedata.com/quote",
+                params={"symbol": symbol, "apikey": TWELVEDATA_API_KEY},
+                timeout=10,
+            )
+            if r.status_code != 200:
+                return None
+            payload = r.json() if isinstance(r.json(), dict) else None
+            if not payload:
+                return None
+            if str(payload.get("status", "")).lower() == "error":
+                return None
+
+            # Twelve Data fields are usually strings.
+            value_raw = payload.get("close") or payload.get("price")
+            change_raw = payload.get("change")
+            pct_raw = payload.get("percent_change")
+
+            if value_raw in (None, ""):
+                return None
+            value = float(value_raw)
+            change = float(change_raw) if change_raw not in (None, "") else 0.0
+            pct = float(pct_raw) if pct_raw not in (None, "") else 0.0
+
+            return {
+                "value": value,
+                "change": change,
+                "changePercentage": pct,
+            }
+        except Exception:
+            return None
+
+    # NOTE: With many Finnhub plans, true index-level symbols (e.g. SPX/NDX) are
+    # restricted. We therefore use well-known proxies that are available:
+    # - SPY/QQQ/DIA as liquid ETFs for US indices
+    # - DAX/CAC as additional indices available on this plan
+    index_proxies = [
+        {"name": "S&P 500 (SPY)", "symbol": "SPY"},
+        {"name": "Nasdaq 100 (QQQ)", "symbol": "QQQ"},
+        {"name": "Dow Jones (DIA)", "symbol": "DIA"},
+        {"name": "DAX", "symbol": "DAX"},
+        {"name": "CAC 40", "symbol": "CAC"},
+    ]
+
+    trending = [
+        {"name": "Apple", "symbol": "AAPL"},
+        {"name": "Microsoft", "symbol": "MSFT"},
+        {"name": "Alphabet", "symbol": "GOOGL"},
+        {"name": "Tesla", "symbol": "TSLA"},
+    ]
+
+    def _build_overview(quote_fn, indices_input, trending_input):
+        indices_out_local = []
+        trending_out_local = []
+
+        for it in indices_input:
+            q = quote_fn(it["symbol"])
+            if q:
+                indices_out_local.append({
+                    "name": it["name"],
+                    "value": round(q["value"], 2),
+                    "change": round(q["change"], 2),
+                    "changePercentage": round(q["changePercentage"], 2),
+                })
+
+        for it in trending_input:
+            q = quote_fn(it["symbol"])
+            if q:
+                trending_out_local.append({
+                    "name": it["name"],
+                    "symbol": it["symbol"],
+                    "value": round(q["value"], 2),
+                    "change": round(q["change"], 2),
+                    "changePercentage": round(q["changePercentage"], 2),
+                })
+
+        return indices_out_local, trending_out_local
+
+    attempted = []
+
+    # 1) Finnhub (primary)
+    if FINNHUB_API_KEY:
+        indices_out, trending_out = _build_overview(_finnhub_quote, index_proxies, trending)
+        attempted.append({"provider": "finnhub", "indicesCount": len(indices_out), "trendingCount": len(trending_out)})
+        if len(indices_out) >= 3 and trending_out:
+            return jsonify({
+                "status": "ok",
+                "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
+                "indices": indices_out,
+                "trendingStocks": trending_out,
+                "dataSource": "finnhub",
+            }), 200
+
+    # 2) Twelve Data (secondary fallback)
+    # Keep the index list conservative here: US ETF proxies are most likely to work on free tier.
+    if TWELVEDATA_API_KEY:
+        td_indices = index_proxies[:3]
+        indices_out, trending_out = _build_overview(_twelvedata_quote, td_indices, trending)
+        attempted.append({"provider": "twelvedata", "indicesCount": len(indices_out), "trendingCount": len(trending_out)})
+        if len(indices_out) >= 3 and trending_out:
+            return jsonify({
+                "status": "ok",
+                "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
+                "indices": indices_out,
+                "trendingStocks": trending_out,
+                "dataSource": "twelvedata",
+            }), 200
+
+    # If we can't fetch enough data, surface a non-200 so the frontend uses mockData.ts.
     return jsonify({
-        "status": "ok",
-        "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
-    }), 200
+        "error": "Failed to fetch market overview from providers",
+        "providersTried": attempted,
+        "finnhubConfigured": bool(FINNHUB_API_KEY),
+        "twelvedataConfigured": bool(TWELVEDATA_API_KEY),
+    }), 503
 
 
 @app.route('/predict', methods=['POST'])

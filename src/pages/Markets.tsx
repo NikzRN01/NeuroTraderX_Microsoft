@@ -20,6 +20,23 @@ type MutualFundRow = Record<string, string | number | null | undefined>;
 
 type ReturnsKey = "1Y Returns (%)" | "3Y Returns (%)" | "5Y Returns (%)";
 
+type MarketIndex = {
+  name: string;
+  value: number;
+  change: number;
+  changePercentage: number;
+};
+
+type MarketNewsItem = {
+  id: number;
+  title: string;
+  description?: string;
+  source: string;
+  time: string;
+  category: string;
+  url?: string;
+};
+
 const RETURN_OPTIONS: { label: string; key: ReturnsKey }[] = [
   { label: "1Y", key: "1Y Returns (%)" },
   { label: "3Y", key: "3Y Returns (%)" },
@@ -85,6 +102,7 @@ const abbreviateSchemeName = (name: string) => {
 };
 
 const Markets = () => {
+  const [indices, setIndices] = useState<MarketIndex[]>(mockMarketData.indices);
   const [selectedReturnsKey, setSelectedReturnsKey] = useState<ReturnsKey>("1Y Returns (%)");
   const [mutualFunds, setMutualFunds] = useState<MutualFundRow[]>([]);
   const [mutualFundsLoading, setMutualFundsLoading] = useState<boolean>(true);
@@ -99,8 +117,42 @@ const Markets = () => {
   const [filtersApplied, setFiltersApplied] = useState<boolean>(false);
   
   // News states
-  const [news, setNews] = useState<any[]>([]);
+  const [news, setNews] = useState<MarketNewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState<boolean>(true);
+
+  // Fetch market overview (indices) from backend; fall back to mock data.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMarketOverview = async () => {
+      try {
+        const data = await marketApi.fetchAllMarketData();
+        const apiIndices = (data as { indices?: unknown })?.indices;
+        if (!cancelled && Array.isArray(apiIndices) && apiIndices.length > 0) {
+          // Basic normalization to ensure numbers.
+          const normalized: MarketIndex[] = [];
+          for (const raw of apiIndices) {
+            if (!raw || typeof raw !== "object") continue;
+            const rec = raw as Record<string, unknown>;
+            const name = String(rec.name ?? "—");
+            const value = Number(rec.value ?? NaN);
+            const change = Number(rec.change ?? 0);
+            const changePercentage = Number(rec.changePercentage ?? 0);
+            if (!Number.isFinite(value)) continue;
+            normalized.push({ name, value, change, changePercentage });
+          }
+          if (normalized.length > 0) setIndices(normalized);
+        }
+      } catch {
+        if (!cancelled) setIndices(mockMarketData.indices);
+      }
+    };
+
+    void loadMarketOverview();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,20 +198,33 @@ const Markets = () => {
         if (!cancelled && data) {
           // API returns { body: [...], meta: {...} }
           const newsArray = data.body || data;
-          const transformedNews = Array.isArray(newsArray) ? newsArray.map((item: any, index: number) => ({
-            id: index + 1,
-            title: item.title || 'No title',
-            description: item.description || '',
-            source: 'Yahoo Finance', // API doesn't provide source, using default
-            time: item.pubDate ? new Date(item.pubDate).toLocaleString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              hour: 'numeric', 
-              minute: '2-digit' 
-            }) : 'Recently',
-            category: 'Markets',
-            url: item.link || '#'
-          })) : [];
+          const transformedNews: MarketNewsItem[] = Array.isArray(newsArray)
+            ? newsArray.map((raw, index) => {
+                const item = (raw && typeof raw === "object") ? (raw as Record<string, unknown>) : {};
+                const title = String(item.title ?? "No title");
+                const description = String(item.description ?? "");
+                const pubDateRaw = item.pubDate;
+                const time = typeof pubDateRaw === "string" || pubDateRaw instanceof Date
+                  ? new Date(pubDateRaw as string).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "Recently";
+                const url = String(item.link ?? "#");
+
+                return {
+                  id: index + 1,
+                  title,
+                  description,
+                  source: "Yahoo Finance",
+                  time,
+                  category: "Markets",
+                  url,
+                };
+              })
+            : [];
           setNews(transformedNews.slice(0, 10));
         } else if (!cancelled) {
           // Fallback to mock data if API fails
@@ -349,7 +414,7 @@ const Markets = () => {
           <Card title="Market Overview">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                {mockMarketData.indices.map((index, i) => (
+                {indices.map((index, i) => (
                   <div key={i} className="glass-panel rounded-lg p-3">
                     <p className="text-sm font-medium mb-1">{index.name}</p>
                     <div className="flex justify-between items-end">
