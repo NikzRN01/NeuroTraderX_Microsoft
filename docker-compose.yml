@@ -7,6 +7,9 @@ services:
       - "5000:5000"
     environment:
       # Optional: set these in your shell or a .env file and Compose will pick them up.
+      # Database connection string (preferred) and legacy key for compatibility.
+      - DB=${DB:-}
+      - DATABASE_URL=${DATABASE_URL:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - STEADY_API_TOKEN=${STEADY_API_TOKEN:-}
 

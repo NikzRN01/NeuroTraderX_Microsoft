@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 import requests
 import pandas as pd
 import yfinance as yf
+import numpy as np
 import random
 import time
 import json
@@ -28,7 +29,8 @@ FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
 # Database Configuration
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///neurotradx.db')
+# Preferred: DB (connection string). Backward compatible: DATABASE_URL.
+DATABASE_URL = os.getenv('DB') or os.getenv('DATABASE_URL') or 'sqlite:///neurotradx.db'
 
 def is_cache_valid(ticker):
     """Check if cached data is still valid"""
@@ -212,6 +214,244 @@ with app.app_context():
     db.create_all()
 
 
+@app.route('/portfolio', methods=['GET'])
+def get_portfolio():
+    """Return portfolio holdings for a user.
+
+    Frontend sends user identity via `User-ID` header.
+    """
+    user_id_raw = request.headers.get('User-ID')
+    if not user_id_raw:
+        return jsonify({"error": "User-ID header is required"}), 400
+
+    try:
+        user_id = int(user_id_raw)
+    except ValueError:
+        return jsonify({"error": "User-ID must be an integer"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    holdings = Portfolio.query.filter_by(user_id=user_id).order_by(Portfolio.created_at.desc()).all()
+    return jsonify({
+        "user_id": user_id,
+        "holdings": [
+            {
+                "id": h.id,
+                "ticker": h.ticker,
+                "quantity": h.quantity,
+                "purchase_price": h.purchase_price,
+                "purchase_date": h.purchase_date.isoformat() if h.purchase_date else None,
+                "notes": h.notes,
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+                "updated_at": h.updated_at.isoformat() if h.updated_at else None,
+            }
+            for h in holdings
+        ],
+    }), 200
+
+
+@app.route('/portfolio', methods=['POST'])
+def upload_portfolio():
+    """Create portfolio holdings for a user.
+
+    Frontend sends `{ user_id, portfolio_data }` where `portfolio_data` is expected
+    to be an array of holdings (ticker/quantity/purchase_price) or an object containing
+    a `holdings` array.
+    """
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    portfolio_data = data.get('portfolio_data')
+
+    if user_id is None:
+        return jsonify({"error": "user_id is required"}), 400
+
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "user_id must be an integer"}), 400
+
+    user = User.query.get(user_id_int)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if portfolio_data is None:
+        return jsonify({"error": "portfolio_data is required"}), 400
+
+    # Normalize to a list of holdings.
+    holdings = None
+    if isinstance(portfolio_data, list):
+        holdings = portfolio_data
+    elif isinstance(portfolio_data, dict):
+        if isinstance(portfolio_data.get('holdings'), list):
+            holdings = portfolio_data.get('holdings')
+        else:
+            # Single holding object
+            holdings = [portfolio_data]
+    else:
+        return jsonify({"error": "portfolio_data must be a list or object"}), 400
+
+    created = []
+    for idx, item in enumerate(holdings):
+        if not isinstance(item, dict):
+            return jsonify({"error": f"holding at index {idx} must be an object"}), 400
+
+        ticker = (item.get('ticker') or item.get('symbol') or '').strip().upper()
+        if not ticker:
+            return jsonify({"error": f"holding at index {idx} is missing ticker"}), 400
+
+        try:
+            quantity = float(item.get('quantity'))
+        except (TypeError, ValueError):
+            return jsonify({"error": f"holding {ticker} has invalid quantity"}), 400
+
+        try:
+            purchase_price = float(item.get('purchase_price') if 'purchase_price' in item else item.get('purchasePrice'))
+        except (TypeError, ValueError):
+            return jsonify({"error": f"holding {ticker} has invalid purchase_price"}), 400
+
+        notes = item.get('notes')
+
+        rec = Portfolio(
+            user_id=user_id_int,
+            ticker=ticker,
+            quantity=quantity,
+            purchase_price=purchase_price,
+            notes=notes,
+        )
+        db.session.add(rec)
+        created.append(rec)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Portfolio saved successfully",
+        "created": [
+            {
+                "id": h.id,
+                "ticker": h.ticker,
+                "quantity": h.quantity,
+                "purchase_price": h.purchase_price,
+            }
+            for h in created
+        ],
+    }), 201
+
+
+@app.route('/watchlist', methods=['GET'])
+def get_watchlist():
+    """Return watchlist items for a user.
+
+    Uses `User-ID` header for user identity (same pattern as GET /portfolio).
+    """
+    user_id_raw = request.headers.get('User-ID')
+    if not user_id_raw:
+        return jsonify({"error": "User-ID header is required"}), 400
+
+    try:
+        user_id = int(user_id_raw)
+    except ValueError:
+        return jsonify({"error": "User-ID must be an integer"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    items = Watchlist.query.filter_by(user_id=user_id).order_by(Watchlist.created_at.desc()).all()
+    return jsonify({
+        "user_id": user_id,
+        "watchlist": [
+            {
+                "id": w.id,
+                "ticker": w.ticker,
+                "target_price": w.target_price,
+                "notes": w.notes,
+                "created_at": w.created_at.isoformat() if w.created_at else None,
+            }
+            for w in items
+        ],
+    }), 200
+
+
+@app.route('/watchlist', methods=['POST'])
+def add_watchlist_item():
+    """Add one or more watchlist items for a user.
+
+    Accepts:
+      - { user_id, ticker, target_price?, notes? }
+      - { user_id, watchlist_data: [...] } where items contain ticker/target_price/notes
+    """
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    if user_id is None:
+        return jsonify({"error": "user_id is required"}), 400
+
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "user_id must be an integer"}), 400
+
+    user = User.query.get(user_id_int)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    payload = data.get('watchlist_data')
+    if payload is None:
+        payload = [{
+            "ticker": data.get('ticker'),
+            "target_price": data.get('target_price') if 'target_price' in data else data.get('targetPrice'),
+            "notes": data.get('notes'),
+        }]
+
+    if isinstance(payload, dict):
+        payload = [payload]
+
+    if not isinstance(payload, list):
+        return jsonify({"error": "watchlist_data must be a list or object"}), 400
+
+    created = []
+    for idx, item in enumerate(payload):
+        if not isinstance(item, dict):
+            return jsonify({"error": f"watchlist item at index {idx} must be an object"}), 400
+
+        ticker = (item.get('ticker') or item.get('symbol') or '').strip().upper()
+        if not ticker:
+            return jsonify({"error": f"watchlist item at index {idx} is missing ticker"}), 400
+
+        target_price = item.get('target_price') if 'target_price' in item else item.get('targetPrice')
+        if target_price is not None and target_price != "":
+            try:
+                target_price = float(target_price)
+            except (TypeError, ValueError):
+                return jsonify({"error": f"watchlist item {ticker} has invalid target_price"}), 400
+        else:
+            target_price = None
+
+        rec = Watchlist(
+            user_id=user_id_int,
+            ticker=ticker,
+            target_price=target_price,
+            notes=item.get('notes'),
+        )
+        db.session.add(rec)
+        created.append(rec)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Watchlist saved successfully",
+        "created": [
+            {
+                "id": w.id,
+                "ticker": w.ticker,
+                "target_price": w.target_price,
+            }
+            for w in created
+        ],
+    }), 201
+
+
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -266,6 +506,423 @@ def update_preferences():
     db.session.commit()
 
     return jsonify({"message": "Preferences updated successfully"}), 200
+
+
+@app.route('/analyze', methods=['POST'])
+def analyze_portfolio():
+    """Basic portfolio analysis endpoint.
+
+    Frontend sends JSON:
+      { tickers: string[], start_date: string, end_date: string }
+    """
+    data = request.get_json(silent=True) or {}
+    tickers = data.get('tickers')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+
+    if not isinstance(tickers, list) or not tickers:
+        return jsonify({"error": "tickers must be a non-empty array"}), 400
+    if not start_date or not end_date:
+        return jsonify({"error": "start_date and end_date are required"}), 400
+
+    # Fetch adjusted close prices.
+    prices = None
+    try:
+        prices = yf.download(tickers, start=start_date, end=end_date, progress=False)
+        if isinstance(prices, pd.DataFrame) and 'Adj Close' in prices.columns:
+            prices = prices['Adj Close']
+        elif isinstance(prices, pd.DataFrame) and 'Close' in prices.columns:
+            prices = prices['Close']
+    except Exception:
+        prices = None
+
+    if prices is None or getattr(prices, 'empty', True):
+        # Fallback: return a mock analysis when market data is unavailable.
+        num_assets = len(tickers)
+        weights = (np.ones(num_assets) / num_assets).tolist() if num_assets else []
+        return jsonify({
+            "tickers": tickers,
+            "weights": weights,
+            "portfolio_return": 0.10,
+            "portfolio_risk": 0.18,
+            "sharpe_ratio": 0.44,
+            "risk_assessment": None,
+            "dataSource": "mock",
+        }), 200
+
+    returns = prices.pct_change().dropna(how='any')
+    if returns.empty:
+        return jsonify({"error": "Not enough data to calculate returns"}), 400
+
+    mean_returns = returns.mean()
+    cov_matrix = returns.cov()
+    num_assets = len(mean_returns)
+    if num_assets == 0:
+        return jsonify({"error": "No assets to analyze"}), 400
+
+    # Simple random-weight portfolio (baseline).
+    weights = np.random.random(num_assets)
+    weights = weights / np.sum(weights)
+    risk_free_rate = 0.02
+
+    portfolio_return = float(np.sum(weights * mean_returns) * 252)
+    portfolio_stddev = float(np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(252))
+    sharpe_ratio = float((portfolio_return - risk_free_rate) / portfolio_stddev) if portfolio_stddev else 0.0
+
+    # Optional AI risk assessment (best-effort, falls back silently).
+    risk_assessment = None
+    if OPENROUTER_API_KEY:
+        try:
+            payload = {
+                "model": "openai/gpt-3.5-turbo",
+                "messages": [
+                    {"role": "system", "content": "You are a professional investment risk analyst. Provide a concise risk assessment."},
+                    {"role": "user", "content": f"Analyze the risk profile of this portfolio: tickers={tickers}, weights={weights.tolist()}, annualized_vol={portfolio_stddev:.4f}, sharpe={sharpe_ratio:.2f}"},
+                ],
+                "max_tokens": 250,
+            }
+            headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+            r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers, timeout=20)
+            if r.status_code == 200:
+                risk_assessment = r.json().get('choices', [{}])[0].get('message', {}).get('content')
+        except Exception:
+            risk_assessment = None
+
+    return jsonify({
+        "tickers": tickers,
+        "weights": weights.tolist(),
+        "portfolio_return": portfolio_return,
+        "portfolio_risk": portfolio_stddev,
+        "sharpe_ratio": sharpe_ratio,
+        "risk_assessment": risk_assessment,
+    }), 200
+
+
+def _calculate_tax_liability(portfolio):
+    short_term_gains = 0.0
+    long_term_gains = 0.0
+    stt_tax = 0.0
+    ltcg_tax = 0.0
+
+    if not portfolio:
+        return {"error": "No portfolio data provided."}
+
+    for asset in portfolio:
+        if not isinstance(asset, dict):
+            continue
+        asset_type = str(asset.get('type', '')).lower()
+        purchase_date = asset.get('purchase_date')
+        purchase_price = asset.get('purchase_price', 0)
+        current_price = asset.get('current_price', 0)
+        quantity = asset.get('quantity', 0)
+
+        if not purchase_date or not purchase_price or not current_price or not quantity:
+            continue
+
+        try:
+            holding_period = (datetime.now() - datetime.strptime(purchase_date, "%Y-%m-%d")).days
+            gain = (float(current_price) - float(purchase_price)) * float(quantity)
+        except Exception:
+            continue
+
+        if asset_type in ['stock', 'mutual_fund', 'crypto', 'gold']:
+            if holding_period <= 365:
+                short_term_gains += gain
+            else:
+                long_term_gains += gain
+
+    # Tax is applied on net positive gains (losses can offset gains).
+    stt_tax = max(0.0, short_term_gains) * 0.15
+    ltcg_tax = max(0.0, long_term_gains) * 0.10
+
+    return {
+        "short_term_gains": short_term_gains,
+        "long_term_gains": long_term_gains,
+        "stt_tax": stt_tax,
+        "ltcg_tax": ltcg_tax,
+        "total_tax": stt_tax + ltcg_tax,
+    }
+
+
+@app.route('/api/submit_portfolio', methods=['POST'])
+def submit_portfolio_for_tax():
+    data = request.get_json(silent=True) or {}
+    portfolio = data.get('portfolio', [])
+    if not portfolio:
+        return jsonify({"error": "No portfolio data provided."}), 400
+    tax_summary = _calculate_tax_liability(portfolio)
+    if isinstance(tax_summary, dict) and tax_summary.get('error'):
+        return jsonify(tax_summary), 400
+    return jsonify({"tax_summary": tax_summary}), 200
+
+
+@app.route('/fetch_data', methods=['POST'])
+def fetch_market_data():
+    """Fetch lightweight market data for a symbol.
+
+    Expected JSON:
+      { market_type: 'stocks'|'crypto'|'commodities', symbol: string, exchange?: string }
+    """
+    data = request.get_json(silent=True) or {}
+    market_type = str(data.get('market_type', '')).lower()
+    symbol = str(data.get('symbol', '')).strip()
+    exchange = str(data.get('exchange', 'NSE')).upper()
+
+    if not market_type or not symbol:
+        return jsonify({"error": "market_type and symbol are required"}), 400
+
+    if market_type in ['stock', 'stocks', 'equity']:
+        yf_symbol = symbol
+        if exchange == 'NSE':
+            yf_symbol = f"{symbol}.NS"
+        elif exchange == 'BSE':
+            yf_symbol = f"{symbol}.BO"
+
+        try:
+            session = create_yfinance_session()
+            stock = yf.Ticker(yf_symbol, session=session)
+            hist = stock.history(period="5d")
+            if hist is None or hist.empty or 'Close' not in hist.columns:
+                mock = get_mock_stock_data(symbol)
+                return jsonify({
+                    "market_type": "stocks",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "last_close": mock.get('lastPrice'),
+                    "change_pct": mock.get('priceChange'),
+                    "dataSource": "mock",
+                }), 200
+
+            last_close = float(hist['Close'].iloc[-1])
+            first_close = float(hist['Close'].iloc[0])
+            change_pct = ((last_close - first_close) / first_close * 100) if first_close else 0.0
+            return jsonify({
+                "market_type": "stocks",
+                "symbol": symbol,
+                "exchange": exchange,
+                "last_close": round(last_close, 2),
+                "change_pct": round(change_pct, 2),
+                "dataSource": "yahoo_finance",
+            }), 200
+        except Exception as e:
+            mock = get_mock_stock_data(symbol)
+            return jsonify({
+                "market_type": "stocks",
+                "symbol": symbol,
+                "exchange": exchange,
+                "last_close": mock.get('lastPrice'),
+                "change_pct": mock.get('priceChange'),
+                "dataSource": "mock",
+                "warning": str(e),
+            }), 200
+
+    if market_type in ['crypto', 'cryptocurrency']:
+        try:
+            import ccxt  # type: ignore
+        except Exception:
+            return jsonify({"error": "ccxt is not installed on the backend"}), 500
+
+        try:
+            ex = ccxt.binance()
+            ticker = ex.fetch_ticker(f"{symbol}/USDT")
+            return jsonify({"market_type": "crypto", "symbol": symbol, "ticker": ticker}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    if market_type in ['commodity', 'commodities']:
+        try:
+            commodity = yf.Ticker(symbol)
+            hist = commodity.history(period="5d")
+            if hist.empty:
+                return jsonify({"error": "No data found for commodity"}), 404
+            last_close = float(hist['Close'].iloc[-1])
+            return jsonify({"market_type": "commodities", "symbol": symbol, "last_close": round(last_close, 2)}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"error": f"Unsupported market_type '{market_type}'"}), 400
+
+
+@app.route('/market-data', methods=['GET'])
+def market_data_overview():
+    """Small overview endpoint (used by the frontend service wrapper)."""
+    # Keep this lightweight; callers can use /fetch_data for specifics.
+    return jsonify({
+        "status": "ok",
+        "defaults": ["AAPL", "MSFT", "GOOGL", "TSLA"],
+    }), 200
+
+
+@app.route('/predict', methods=['POST'])
+def predict_prices():
+    """Lightweight future price projection without heavy ML dependencies."""
+    data = request.get_json(silent=True) or {}
+    symbol = str(data.get('symbol', '')).strip().upper()
+    days = data.get('days')
+    future_days = data.get('future_days')
+    initial_investment = data.get('initial_investment')
+
+    if not symbol:
+        return jsonify({"error": "symbol is required"}), 400
+    try:
+        days = int(days)
+        future_days = int(future_days)
+        initial_investment = float(initial_investment)
+    except (TypeError, ValueError):
+        return jsonify({"error": "days, future_days, initial_investment must be numeric"}), 400
+
+    try:
+        session = create_yfinance_session()
+        hist = yf.Ticker(symbol, session=session).history(period=f"{days}d")
+    except Exception:
+        hist = None
+
+    closes = None
+    if hist is not None and not hist.empty and 'Close' in hist.columns:
+        closes = hist['Close'].dropna()
+
+    if closes is None or closes.empty:
+        # Fallback: generate a mock forecast.
+        mock = get_mock_stock_data(symbol)
+        last_close = float(mock.get('lastPrice') or 100.0)
+        mean_return = 0.001
+        vol = 0.02
+
+        start_date = datetime.utcnow().date()
+        forecast = []
+        simulated = []
+        cur_price = last_close
+        cur_invest = initial_investment
+        for i in range(1, future_days + 1):
+            shock = float(np.random.normal(0.0, vol))
+            step_ret = mean_return + shock
+            cur_price = max(0.01, cur_price * (1 + step_ret))
+            cur_invest = max(0.01, cur_invest * (1 + step_ret))
+            forecast.append({
+                "date": (start_date + timedelta(days=i)).isoformat(),
+                "price": round(cur_price, 2),
+            })
+            simulated.append({
+                "date": (start_date + timedelta(days=i)).isoformat(),
+                "value": round(cur_invest, 2),
+            })
+
+        return jsonify({
+            "symbol": symbol,
+            "last_close": round(last_close, 2),
+            "mean_daily_return": mean_return,
+            "daily_volatility": vol,
+            "forecast": forecast,
+            "simulated_investment": simulated,
+            "dataSource": "mock",
+        }), 200
+
+    daily_returns = closes.pct_change().dropna()
+    mean_return = float(daily_returns.mean()) if not daily_returns.empty else 0.0
+    vol = float(daily_returns.std()) if not daily_returns.empty else 0.0
+
+    last_close = float(closes.iloc[-1])
+    start_date = datetime.utcnow().date()
+
+    forecast = []
+    simulated = []
+    cur_price = last_close
+    cur_invest = initial_investment
+
+    for i in range(1, future_days + 1):
+        # Simple drift model + stochastic shock.
+        shock = float(np.random.normal(0.0, vol)) if vol else 0.0
+        step_ret = mean_return + shock
+        cur_price = max(0.01, cur_price * (1 + step_ret))
+        cur_invest = max(0.01, cur_invest * (1 + step_ret))
+        forecast.append({
+            "date": (start_date + timedelta(days=i)).isoformat(),
+            "price": round(cur_price, 2),
+        })
+        simulated.append({
+            "date": (start_date + timedelta(days=i)).isoformat(),
+            "value": round(cur_invest, 2),
+        })
+
+    return jsonify({
+        "symbol": symbol,
+        "last_close": round(last_close, 2),
+        "mean_daily_return": mean_return,
+        "daily_volatility": vol,
+        "forecast": forecast,
+        "simulated_investment": simulated,
+        "dataSource": "yahoo_finance",
+    }), 200
+
+
+@app.route('/insights', methods=['POST'])
+def batch_insights():
+    """Batch insights endpoint (symbols + intervals)."""
+    data = request.get_json(silent=True) or {}
+    symbols = data.get('symbols')
+    intervals = data.get('intervals')
+
+    if not isinstance(symbols, list) or not symbols:
+        return jsonify({"error": "symbols must be a non-empty array"}), 400
+    if not isinstance(intervals, list) or not intervals:
+        return jsonify({"error": "intervals must be a non-empty array"}), 400
+
+    out = []
+    for symbol in symbols:
+        sym = str(symbol).strip().upper()
+        if not sym:
+            continue
+        for d in intervals:
+            try:
+                days = int(d)
+            except (TypeError, ValueError):
+                continue
+            try:
+                session = create_yfinance_session()
+                hist = yf.Ticker(sym, session=session).history(period=f"{days}d")
+                if hist is None or hist.empty:
+                    mock = get_mock_stock_data(sym)
+                    out.append({
+                        "symbol": sym,
+                        "days": days,
+                        "lastPrice": mock.get('lastPrice'),
+                        "priceChange": mock.get('priceChange'),
+                        "dayHigh": mock.get('dayHigh'),
+                        "marketCap": mock.get('marketCap'),
+                        "dataSource": "mock",
+                    })
+                    continue
+                last_price = float(hist['Close'].iloc[-1])
+                first_price = float(hist['Close'].iloc[0])
+                change_pct = ((last_price - first_price) / first_price * 100) if first_price else 0.0
+                volume = float(hist['Volume'].iloc[-1]) if 'Volume' in hist.columns else None
+                day_low = float(hist['Low'].iloc[-1]) if 'Low' in hist.columns else None
+                day_high = float(hist['High'].iloc[-1]) if 'High' in hist.columns else None
+
+                out.append({
+                    "symbol": sym,
+                    "days": days,
+                    "lastPrice": round(last_price, 2),
+                    "priceChange": round(change_pct, 2),
+                    "volume": volume,
+                    "dayLow": round(day_low, 2) if isinstance(day_low, (int, float)) else None,
+                    "dayHigh": round(day_high, 2) if isinstance(day_high, (int, float)) else None,
+                    "dataSource": "yahoo_finance",
+                })
+            except Exception as e:
+                mock = get_mock_stock_data(sym)
+                out.append({
+                    "symbol": sym,
+                    "days": days,
+                    "lastPrice": mock.get('lastPrice'),
+                    "priceChange": mock.get('priceChange'),
+                    "dayHigh": mock.get('dayHigh'),
+                    "marketCap": mock.get('marketCap'),
+                    "dataSource": "mock",
+                    "warning": str(e),
+                })
+
+    return jsonify({"results": out}), 200
 
 
 @app.route("/")
@@ -411,23 +1068,59 @@ def investment_strategy():
 @app.route('/news', methods=['GET'])
 def get_news():
     """Fetch market news from Steady API"""
-    if not STEADY_API_TOKEN:
-        return jsonify({"error": "STEADY_API_TOKEN is not configured"}), 500
-    
     # Get tickers from query params or use defaults
     tickers = request.args.get('ticker', 'AAPL,TSLA,GOOGL,MSFT')
-    
+
+    # SteadyAPI can return 401/403 depending on plan/token validity.
+    # To avoid breaking the UI, fall back to Finnhub (preferred) or mock.
+    if not STEADY_API_TOKEN:
+        finnhub_payload = fetch_news_from_finnhub(tickers)
+        if finnhub_payload:
+            finnhub_payload["warning"] = "STEADY_API_TOKEN is not configured; returned Finnhub news instead"
+            return jsonify(finnhub_payload), 200
+        return jsonify(get_mock_news_payload(
+            tickers,
+            warning="STEADY_API_TOKEN is not configured and Finnhub is unavailable; returning mock news"
+        )), 200
+
     news_url = 'https://api.steadyapi.com/v1/markets/news'
     params = {'ticker': tickers}
     headers = {'Authorization': f'Bearer {STEADY_API_TOKEN}'}
-    
+
     try:
         response = requests.get(news_url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        news_data = response.json()
-        return jsonify(news_data), 200
+        if response.status_code == 200:
+            try:
+                return jsonify(response.json()), 200
+            except ValueError:
+                return jsonify(get_mock_news_payload(
+                    tickers,
+                    warning="SteadyAPI returned non-JSON response; returning mock news",
+                    upstream_status=200,
+                )), 200
+
+        finnhub_payload = fetch_news_from_finnhub(tickers)
+        if finnhub_payload:
+            finnhub_payload["warning"] = f"SteadyAPI request failed ({response.status_code}); returned Finnhub news instead"
+            finnhub_payload["upstreamStatus"] = response.status_code
+            return jsonify(finnhub_payload), 200
+
+        return jsonify(get_mock_news_payload(
+            tickers,
+            warning=f"SteadyAPI request failed ({response.status_code}); returning mock news",
+            upstream_status=response.status_code,
+        )), 200
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e), "message": "Failed to fetch news from API"}), 500
+        finnhub_payload = fetch_news_from_finnhub(tickers)
+        if finnhub_payload:
+            finnhub_payload["warning"] = f"SteadyAPI request error; returned Finnhub news instead"
+            finnhub_payload["error"] = str(e)
+            return jsonify(finnhub_payload), 200
+
+        return jsonify(get_mock_news_payload(
+            tickers,
+            warning=f"SteadyAPI request error: {str(e)}; returning mock news"
+        )), 200
 
 
 @app.route('/api/mutual-funds', methods=['GET', 'OPTIONS'])
@@ -689,6 +1382,120 @@ def get_mock_stock_data(symbol):
         "riskLevel": ai_analysis["riskLevel"],
         "confidence": ai_analysis["confidence"]
     }
+
+
+def get_mock_news_payload(tickers_csv, warning=None, upstream_status=None):
+    """Return mock news payload shaped like the SteadyAPI response.
+
+    The frontend expects either an array or an object with `{ body: [...] }` where
+    each item includes: title, description, pubDate, link.
+    """
+    tickers = [t.strip().upper() for t in str(tickers_csv or "").split(",") if t.strip()]
+    if not tickers:
+        tickers = ["AAPL", "TSLA", "GOOGL", "MSFT"]
+
+    now = datetime.utcnow()
+    templates = [
+        "{t} sees increased volume amid broader market moves",
+        "Analysts weigh in on {t} ahead of upcoming catalysts",
+        "{t} trades mixed as investors digest macro signals",
+        "What to watch next for {t}: key levels and sentiment",
+    ]
+
+    body = []
+    for i in range(12):
+        t = random.choice(tickers)
+        pub = now - timedelta(hours=i * 3)
+        title = random.choice(templates).format(t=t)
+        body.append({
+            "title": title,
+            "description": f"Mock news item for {t}. Live news is unavailable right now.",
+            "pubDate": pub.isoformat() + "Z",
+            "link": f"https://finance.yahoo.com/quote/{t}",
+        })
+
+    payload = {
+        "body": body,
+        "meta": {
+            "tickers": ",".join(tickers),
+            "generatedAt": now.isoformat() + "Z",
+        },
+        "dataSource": "mock",
+    }
+    if warning:
+        payload["warning"] = warning
+    if upstream_status is not None:
+        payload["upstreamStatus"] = upstream_status
+    return payload
+
+
+def fetch_news_from_finnhub(tickers_csv):
+    """Fetch market news from Finnhub and normalize to `{ body: [...] }`.
+
+    Finnhub endpoints used:
+      - General: /news?category=general
+      - Company: /company-news?symbol=...&from=YYYY-MM-DD&to=YYYY-MM-DD
+
+    Returns:
+      dict payload with keys: body, meta, dataSource
+      or None if not configured / failed.
+    """
+    if not FINNHUB_API_KEY:
+        return None
+
+    tickers = [t.strip().upper() for t in str(tickers_csv or "").split(",") if t.strip()]
+    if not tickers:
+        tickers = ["AAPL", "TSLA", "GOOGL", "MSFT"]
+
+    now = datetime.utcnow()
+    try:
+        # If a single ticker is requested, fetch company news for the last 7 days.
+        if len(tickers) == 1:
+            symbol = tickers[0]
+            from_date = (now - timedelta(days=7)).date().isoformat()
+            to_date = now.date().isoformat()
+            url = "https://finnhub.io/api/v1/company-news"
+            params = {"symbol": symbol, "from": from_date, "to": to_date, "token": FINNHUB_API_KEY}
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code != 200:
+                return None
+            items = r.json() if isinstance(r.json(), list) else []
+        else:
+            # For multiple tickers, avoid N requests; use general market news.
+            url = "https://finnhub.io/api/v1/news"
+            params = {"category": "general", "token": FINNHUB_API_KEY}
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code != 200:
+                return None
+            items = r.json() if isinstance(r.json(), list) else []
+
+        body = []
+        for it in items[:50]:
+            if not isinstance(it, dict):
+                continue
+            dt = it.get("datetime")
+            try:
+                pub = datetime.utcfromtimestamp(int(dt)).isoformat() + "Z" if dt else now.isoformat() + "Z"
+            except Exception:
+                pub = now.isoformat() + "Z"
+            body.append({
+                "title": it.get("headline") or it.get("title") or "No title",
+                "description": it.get("summary") or it.get("description") or "",
+                "pubDate": pub,
+                "link": it.get("url") or it.get("link") or "#",
+            })
+
+        return {
+            "body": body,
+            "meta": {
+                "tickers": ",".join(tickers),
+                "generatedAt": now.isoformat() + "Z",
+                "provider": "finnhub",
+            },
+            "dataSource": "finnhub",
+        }
+    except Exception:
+        return None
 
 # Run the Flask application
 if __name__ == '__main__':

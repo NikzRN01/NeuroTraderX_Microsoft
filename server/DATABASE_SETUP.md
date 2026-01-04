@@ -15,8 +15,10 @@
 Edit `server/.env` and replace `{your_password}` with your actual PostgreSQL password:
 
 ```bash
-DATABASE_URL=postgresql://neuroadmin:YOUR_ACTUAL_PASSWORD@neurotradex.postgres.database.azure.com:5432/postgres?sslmode=require
+DB=postgresql://neuroadmin:YOUR_ACTUAL_PASSWORD@neurotradex.postgres.database.azure.com:5432/postgres?sslmode=require
 ```
+
+Note: `DATABASE_URL` is still supported for backward compatibility, but `DB` takes precedence.
 
 ### 2. Install Dependencies
 
@@ -42,13 +44,15 @@ python app.py
 ## 📊 Database Schema
 
 ### Users Table
+
 - `id`: Primary key
 - `username`: Unique username
-- `password`: User password (TODO: Hash in production)
+- `password`: User password (plain text currently; hash in production)
 - `financial_goal`: Investment goals
 - `risk_tolerance`: Risk level
 - `investment_preference`: Investment preferences
 - `created_at`: Account creation timestamp
+
 
 ### Portfolios Table
 - `id`: Primary key
@@ -67,6 +71,26 @@ python app.py
 - `target_price`: Target price alert
 - `notes`: User notes
 - `created_at`: Timestamp
+
+## 🧱 Create Database Tables
+
+### Option A: Create tables via SQLAlchemy (recommended)
+
+This uses the models in `server/app.py`:
+
+```powershell
+python -c "from app import app, db; app.app_context().push(); db.create_all(); print('Database tables created successfully!')"
+```
+
+### Option B: Create tables manually via SQL (PostgreSQL)
+
+If you want to run raw SQL, use `server/schema.sql`.
+
+Example with `psql`:
+
+```powershell
+psql "postgresql://USERNAME:PASSWORD@HOST:5432/postgres?sslmode=require" -f .\schema.sql
+```
 
 ## 🔒 Security Notes
 
@@ -118,7 +142,7 @@ POST /api/watchlist
 
 **Connection Error**: Verify your IP is whitelisted in Azure Portal → PostgreSQL → Networking
 
-**SSL Error**: Ensure `?sslmode=require` is in DATABASE_URL
+**SSL Error**: Ensure `?sslmode=require` is in `DB`
 
 **Import Error**: Run `pip install psycopg2-binary`
 
