@@ -55,23 +55,26 @@ import { toast } from "sonner";
 interface HoldingInput {
   id: string;
   symbol: string;
-  shares: string;
+  quantity: string;
   purchasePrice: string;
   currentPrice: string;
   purchaseDate: string;
+  assetType: string;
 }
 
 const TaxOptimization = () => {
   const [annualIncome, setAnnualIncome] = useState("100000");
   const [showInputFields, setShowInputFields] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false); // Track if editing all holdings
   const [holdings, setHoldings] = useState<HoldingInput[]>([
     {
       id: "1",
       symbol: "",
-      shares: "",
+      quantity: "",
       purchasePrice: "",
       currentPrice: "",
       purchaseDate: "",
+      assetType: "Stock Investments",
     },
   ]);
 
@@ -79,15 +82,22 @@ const TaxOptimization = () => {
   useEffect(() => {
     const saved = loadHoldingsFromStorage();
     if (saved && saved.length > 0) {
-      setHoldings(saved);
-      setShowInputFields(false);
-      toast.success("Loaded saved holdings");
+      // Filter out completely empty holdings
+      const nonEmptyHoldings = saved.filter(h => 
+        h.symbol || h.quantity || h.purchasePrice || h.currentPrice || h.purchaseDate
+      );
+      
+      if (nonEmptyHoldings.length > 0) {
+        setHoldings(nonEmptyHoldings);
+        setShowInputFields(false);
+        toast.success("Loaded saved holdings");
+      }
     }
   }, []);
 
   // Save holdings whenever they change
   useEffect(() => {
-    if (holdings.some(h => h.symbol || h.shares || h.purchasePrice)) {
+    if (holdings.some(h => h.symbol || h.quantity || h.purchasePrice)) {
       saveHoldingsToStorage(holdings);
     }
   }, [holdings]);
@@ -109,15 +119,17 @@ const TaxOptimization = () => {
   // Add new holding row
   const addHolding = () => {
     setShowInputFields(true);
+    setIsEditMode(false); // Not editing existing, just adding new
     setHoldings([
       ...holdings,
       {
         id: Date.now().toString(),
         symbol: "",
-        shares: "",
+        quantity: "",
         purchasePrice: "",
         currentPrice: "",
         purchaseDate: "",
+        assetType: "Stock Investments",
       },
     ]);
   };
@@ -145,13 +157,24 @@ const TaxOptimization = () => {
     return !isNaN(date.getTime());
   };
 
+  // Helper to check if a holding is complete
+  const isHoldingComplete = (h: HoldingInput): boolean => {
+    // For Gold Investments, symbol is optional
+    const symbolRequired = h.assetType !== "Gold Investments";
+    const hasSymbol = symbolRequired ? !!h.symbol : true;
+    return !!(hasSymbol && h.quantity && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate));
+  };
+
+  // Get incomplete holdings for input fields
+  const incompleteHoldings = holdings.filter(h => !isHoldingComplete(h));
+
   // Parse and analyze holdings
   const analyzedHoldings: HoldingWithTax[] = holdings
-    .filter(h => h.symbol && h.shares && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate))
+    .filter(h => isHoldingComplete(h))
     .map(h => 
       analyzeHolding(
-        h.symbol.toUpperCase(),
-        parseFloat(h.shares),
+        h.symbol ? h.symbol.toUpperCase() : h.assetType, // Use asset type as symbol for Gold
+        parseFloat(h.quantity),
         parseFloat(h.purchasePrice),
         parseFloat(h.currentPrice),
         new Date(h.purchaseDate),
@@ -195,18 +218,21 @@ const TaxOptimization = () => {
     setHoldings([{
       id: "1",
       symbol: "",
-      shares: "",
+      quantity: "",
       purchasePrice: "",
       currentPrice: "",
       purchaseDate: "",
+      assetType: "Stock Investments",
     }]);
     localStorage.removeItem('tax_optimization_holdings');
     toast.success("Cleared all holdings");
   };
 
-  // Edit holdings
+  // Edit holdings - make complete holdings editable again
   const handleEditHoldings = () => {
+    // Keep all holdings (both complete and incomplete) for editing
     setShowInputFields(true);
+    setIsEditMode(true); // Editing all existing holdings
   };
 
   // Calculate tax and hide input fields
@@ -215,8 +241,19 @@ const TaxOptimization = () => {
       toast.error("Please add at least one complete holding");
       return;
     }
+    // Remove incomplete holdings when calculating tax
+    setHoldings(holdings.filter(h => isHoldingComplete(h)));
     setShowInputFields(false);
+    setIsEditMode(false);
     toast.success("Tax impact calculated");
+  };
+
+  // Cancel adding/editing holdings
+  const handleCancel = () => {
+    // Remove incomplete holdings and hide input fields
+    setHoldings(holdings.filter(h => isHoldingComplete(h)));
+    setShowInputFields(false);
+    toast.info("Changes cancelled");
   };
 
   return (
@@ -229,12 +266,12 @@ const TaxOptimization = () => {
       >
         {/* Header */}
         <motion.div variants={itemVariants} className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-i">
             <Link to="/" className="text-primary hover:text-primary/80 transition-colors">
               <ChevronLeft className="h-5 w-5" />
             </Link>
             <div>
-              <h1 className="text-3xl font-bold text-gradient">Tax Optimization</h1>
+              <h1 className="text-3xl font-bold text-gradient">Tax Impact Analysis</h1>
             </div>
           </div>
           <div className="flex gap-2">
@@ -242,6 +279,12 @@ const TaxOptimization = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
+            {analyzedHoldings.length > 0 && (
+              <Button onClick={handleClearAll} variant="outline" size="sm">
+                <Trash2 className="h-4 w-4 mr-1" />
+                Clear All
+              </Button>
+            )}
           </div>
         </motion.div>
 
@@ -303,28 +346,82 @@ const TaxOptimization = () => {
                 )}
               </div>
 
+              {/* Display analyzed holdings in read-only table */}
+              {analyzedHoldings.length > 0 && !showInputFields && (
+                <div className="mt-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Symbol</th>
+                          <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Quantity</th>
+                          <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Cost Basis</th>
+                          <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Current Value</th>
+                          <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Gain/Loss</th>
+                          <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Tax Impact</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyzedHoldings.map((holding, idx) => (
+                          <tr key={idx} className="border-b border-border/50">
+                            <td className="py-3 px-3 text-sm font-medium">{holding.symbol}</td>
+                            <td className="text-right py-3 px-3 text-sm">{holding.quantity}</td>
+                            <td className="text-right py-3 px-3 text-sm">{formatCurrency(holding.costBasis)}</td>
+                            <td className="text-right py-3 px-3 text-sm">{formatCurrency(holding.currentValue)}</td>
+                            <td className={`text-right py-3 px-3 text-sm font-medium ${
+                              holding.unrealizedGainLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              {holding.unrealizedGainLoss >= 0 ? '+' : ''}{formatCurrency(holding.unrealizedGainLoss)}
+                            </td>
+                            <td className="text-right py-3 px-3 text-sm font-medium">
+                              {formatCurrency(holding.estimatedTax)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {showInputFields && (
                 <div className="space-y-3">
-                  {holdings.map((holding) => (
+                  {/* Show all holdings in edit mode, only incomplete when adding new */}
+                  {(isEditMode ? holdings : incompleteHoldings).map((holding) => (
                   <div
                     key={holding.id}
-                    className="grid grid-cols-6 gap-3 p-4 rounded-lg bg-secondary/20 border border-border/30"
+                    className={`grid ${holding.assetType === "Gold Investments" ? "grid-cols-6" : "grid-cols-7"} gap-3 p-4 rounded-lg bg-secondary/20 border border-border/30`}
                   >
                     <div>
-                      <Label className="text-xs">Symbol</Label>
-                      <Input
-                        value={holding.symbol}
-                        onChange={(e) => updateHolding(holding.id, "symbol", e.target.value.toUpperCase())}
-                        placeholder="AAPL"
-                        className="mt-1"
-                      />
+                      <Label className="text-xs">Asset Type</Label>
+                      <select
+                        value={holding.assetType}
+                        onChange={(e) => updateHolding(holding.id, "assetType", e.target.value)}
+                        className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="Stock Investments">Stock Investments</option>
+                        <option value="Mutual Funds">Mutual Funds</option>
+                        <option value="Crypto Account">Crypto Account</option>
+                        <option value="Gold Investments">Gold Investments</option>
+                      </select>
                     </div>
+                    {holding.assetType !== "Gold Investments" && (
+                      <div>
+                        <Label className="text-xs">Symbol</Label>
+                        <Input
+                          value={holding.symbol}
+                          onChange={(e) => updateHolding(holding.id, "symbol", e.target.value.toUpperCase())}
+                          placeholder="AAPL"
+                          className="mt-1"
+                        />
+                      </div>
+                    )}
                     <div>
-                      <Label className="text-xs">Shares</Label>
+                      <Label className="text-xs">{holding.assetType === "Gold Investments" ? "Grams" : "Quantity"}</Label>
                       <Input
                         type="number"
-                        value={holding.shares}
-                        onChange={(e) => updateHolding(holding.id, "shares", e.target.value)}
+                        value={holding.quantity}
+                        onChange={(e) => updateHolding(holding.id, "quantity", e.target.value)}
                         placeholder="100"
                         className="mt-1"
                       />
@@ -387,11 +484,9 @@ const TaxOptimization = () => {
                     Calculate Tax Impact
                   </Button>
 
-                  {holdings.length > 1 && (
-                    <Button onClick={handleClearAll} variant="outline" size="sm">
-                      Clear All
-                    </Button>
-                  )}
+                  <Button onClick={handleCancel} variant="outline" size="sm">
+                    Cancel
+                  </Button>
                 </div>
               )}
             </div>
@@ -478,7 +573,7 @@ const TaxOptimization = () => {
                   <thead>
                     <tr className="border-b border-border/30">
                       <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground">Symbol</th>
-                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Shares</th>
+                      <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Quantity</th>
                       <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Cost Basis</th>
                       <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Current Value</th>
                       <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Gain/Loss</th>
@@ -491,7 +586,7 @@ const TaxOptimization = () => {
                     {analyzedHoldings.map((holding, index) => (
                       <tr key={index} className="border-b border-border/10">
                         <td className="py-3 px-2 font-medium">{holding.symbol}</td>
-                        <td className="py-3 px-2 text-right">{holding.shares}</td>
+                        <td className="py-3 px-2 text-right">{holding.quantity}</td>
                         <td className="py-3 px-2 text-right">{formatCurrency(holding.costBasis)}</td>
                         <td className="py-3 px-2 text-right">{formatCurrency(holding.currentValue)}</td>
                         <td className={`py-3 px-2 text-right ${holding.unrealizedGainLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -555,8 +650,8 @@ const TaxOptimization = () => {
                       </div>
                       <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-border/20">
                         <div>
-                          <p className="text-xs text-muted-foreground">Shares</p>
-                          <p className="font-medium">{opp.shares}</p>
+                          <p className="text-xs text-muted-foreground">Quantity</p>
+                          <p className="font-medium">{opp.quantity}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Unrealized Loss</p>
