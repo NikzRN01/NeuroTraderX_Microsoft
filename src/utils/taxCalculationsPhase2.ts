@@ -320,14 +320,18 @@ export function generateOptimizationStrategies(
 
     // Strategy 4: Bracket optimization
     if (annualIncome > 90000 && annualIncome < 110000 && holding.unrealizedGainLoss > 0) {
-      strategies.push({
-        strategyType: 'BRACKET_OPTIMIZATION',
-        title: `Optimize Tax Bracket Timing`,
-        description: `You're near a tax bracket threshold. Consider spreading sales across tax years to stay in lower bracket.`,
-        action: 'Review annual income and plan sales accordingly',
-        estimatedSavings: holding.unrealizedGainLoss * 0.02, // Rough estimate
-        priority: 'MEDIUM',
-      });
+      // Only add bracket optimization strategy once, not for every holding
+      const bracketStrategyExists = strategies.some(s => s.strategyType === 'BRACKET_OPTIMIZATION');
+      if (!bracketStrategyExists) {
+        strategies.push({
+          strategyType: 'BRACKET_OPTIMIZATION',
+          title: `Optimize Tax Bracket Timing`,
+          description: `You're near a tax bracket threshold. Consider spreading sales across tax years to stay in lower bracket.`,
+          action: 'Review annual income and plan sales accordingly',
+          estimatedSavings: holding.unrealizedGainLoss * 0.02, // Rough estimate
+          priority: 'MEDIUM',
+        });
+      }
     }
   });
 
