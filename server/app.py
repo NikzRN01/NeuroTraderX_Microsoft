@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timedelta
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from sentiment_analysis import analyze_news_sentiment, get_sentiment_summary, analyze_single_text
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1320,9 +1321,11 @@ def investment_strategy():
 
 @app.route('/news', methods=['GET'])
 def get_news():
-    """Fetch market news from Steady API"""
+    """Fetch market news from Steady API with sentiment analysis"""
     # Get tickers from query params or use defaults
     tickers = request.args.get('ticker', 'AAPL,TSLA,GOOGL,MSFT')
+    # Check if sentiment analysis should be included
+    include_sentiment = request.args.get('sentiment', 'true').lower() == 'true'
 
     # SteadyAPI can return 401/403 depending on plan/token validity.
     # To avoid breaking the UI, fall back to Finnhub (preferred) or mock.
@@ -1330,11 +1333,19 @@ def get_news():
         finnhub_payload = fetch_news_from_finnhub(tickers)
         if finnhub_payload:
             finnhub_payload["warning"] = "STEADY_API_TOKEN is not configured; returned Finnhub news instead"
+            # Add sentiment analysis
+            if include_sentiment and finnhub_payload.get('body'):
+                finnhub_payload['body'] = analyze_news_sentiment(finnhub_payload['body'])
+                finnhub_payload['sentimentSummary'] = get_sentiment_summary(finnhub_payload['body'])
             return jsonify(finnhub_payload), 200
-        return jsonify(get_mock_news_payload(
+        mock_payload = get_mock_news_payload(
             tickers,
             warning="STEADY_API_TOKEN is not configured and Finnhub is unavailable; returning mock news"
-        )), 200
+        )
+        if include_sentiment and mock_payload.get('body'):
+            mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
+            mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
+        return jsonify(mock_payload), 200
 
     news_url = 'https://api.steadyapi.com/v1/markets/news'
     params = {'ticker': tickers}
@@ -1344,36 +1355,89 @@ def get_news():
         response = requests.get(news_url, headers=headers, params=params, timeout=10)
         if response.status_code == 200:
             try:
-                return jsonify(response.json()), 200
+                payload = response.json()
+                # Add sentiment analysis to news items
+                if include_sentiment and payload.get('body'):
+                    payload['body'] = analyze_news_sentiment(payload['body'])
+                    payload['sentimentSummary'] = get_sentiment_summary(payload['body'])
+                return jsonify(payload), 200
             except ValueError:
-                return jsonify(get_mock_news_payload(
+                mock_payload = get_mock_news_payload(
                     tickers,
                     warning="SteadyAPI returned non-JSON response; returning mock news",
                     upstream_status=200,
-                )), 200
+                )
+                if include_sentiment and mock_payload.get('body'):
+                    mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
+                    mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
+                return jsonify(mock_payload), 200
 
         finnhub_payload = fetch_news_from_finnhub(tickers)
         if finnhub_payload:
             finnhub_payload["warning"] = f"SteadyAPI request failed ({response.status_code}); returned Finnhub news instead"
             finnhub_payload["upstreamStatus"] = response.status_code
+            if include_sentiment and finnhub_payload.get('body'):
+                finnhub_payload['body'] = analyze_news_sentiment(finnhub_payload['body'])
+                finnhub_payload['sentimentSummary'] = get_sentiment_summary(finnhub_payload['body'])
             return jsonify(finnhub_payload), 200
 
-        return jsonify(get_mock_news_payload(
+        mock_payload = get_mock_news_payload(
             tickers,
             warning=f"SteadyAPI request failed ({response.status_code}); returning mock news",
             upstream_status=response.status_code,
-        )), 200
+        )
+        if include_sentiment and mock_payload.get('body'):
+            mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
+            mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
+        return jsonify(mock_payload), 200
     except requests.exceptions.RequestException as e:
         finnhub_payload = fetch_news_from_finnhub(tickers)
         if finnhub_payload:
             finnhub_payload["warning"] = f"SteadyAPI request error; returned Finnhub news instead"
             finnhub_payload["error"] = str(e)
+            if include_sentiment and finnhub_payload.get('body'):
+                finnhub_payload['body'] = analyze_news_sentiment(finnhub_payload['body'])
+                finnhub_payload['sentimentSummary'] = get_sentiment_summary(finnhub_payload['body'])
             return jsonify(finnhub_payload), 200
 
-        return jsonify(get_mock_news_payload(
+        mock_payload = get_mock_news_payload(
             tickers,
             warning=f"SteadyAPI request error: {str(e)}; returning mock news"
-        )), 200
+        )
+        if include_sentiment and mock_payload.get('body'):
+            mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
+            mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
+        return jsonify(mock_payload), 200
+
+
+@app.route('/api/sentiment/analyze', methods=['POST'])
+def analyze_sentiment():
+    """Analyze sentiment of provided text using Azure AI Language"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'text' not in data:
+            return jsonify({
+                'error': 'Missing required field: text'
+            }), 400
+        
+        text = data.get('text', '')
+        
+        if not text or len(text.strip()) == 0:
+            return jsonify({
+                'error': 'Text cannot be empty'
+            }), 400
+        
+        # Analyze sentiment
+        result = analyze_single_text(text)
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'sentiment': 'error'
+        }), 500
 
 
 @app.route('/api/mutual-funds', methods=['GET', 'OPTIONS'])
