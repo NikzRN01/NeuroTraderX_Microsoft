@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ArrowRight, Filter, Clock, Search, Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { newsApi } from "@/services/api";
+import { IntelligentSearch } from "@/components/search/IntelligentSearch";
 
 interface NewsItem {
   id: number;
@@ -189,8 +190,34 @@ const NewsPage = () => {
         animate="show"
         className="space-y-6"
       >
+        {/* AI-Powered Intelligent Search */}
+        <motion.div variants={itemVariants}>
+          <IntelligentSearch 
+            onResultsChange={(results) => {
+              // When search results come in, you can optionally replace the news list
+              if (results.length > 0) {
+                setNewsItems(results.map((r, idx) => ({
+                  id: idx + 1,
+                  title: r.title,
+                  description: r.description,
+                  source: r.source,
+                  time: new Date(r.pubDate).toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }),
+                  category: 'Markets',
+                  url: r.url,
+                  sentiment: r.sentiment
+                })));
+              }
+            }}
+          />
+        </motion.div>
+
         <motion.div variants={itemVariants} className="flex flex-col items-center gap-4">
-          <div className="relative w-full max-w-md">
+          {/* <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -199,7 +226,7 @@ const NewsPage = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-          </div>
+          </div> */}
           
           {/* Sentiment Filter */}
           <div className="flex items-center gap-2 flex-wrap justify-center">

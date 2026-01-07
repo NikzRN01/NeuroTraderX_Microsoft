@@ -14,6 +14,15 @@ from datetime import datetime, timedelta
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from sentiment_analysis import analyze_news_sentiment, get_sentiment_summary, analyze_single_text
+from azure_search import (
+    create_news_index, 
+    index_news_documents, 
+    search_news, 
+    get_search_suggestions,
+    get_search_facets,
+    recreate_news_index,
+    get_index_schema
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1320,93 +1329,189 @@ def investment_strategy():
 
 @app.route('/news', methods=['GET'])
 def get_news():
-    """Fetch market news from Steady API with sentiment analysis"""
+    """Fetch market news from Finnhub API with sentiment analysis"""
+    print("[NEWS] ===== /news endpoint called =====")
+    
     # Get tickers from query params or use defaults
     tickers = request.args.get('ticker', 'AAPL,TSLA,GOOGL,MSFT')
-    # Check if sentiment analysis should be included
     include_sentiment = request.args.get('sentiment', 'true').lower() == 'true'
-
-    # SteadyAPI can return 401/403 depending on plan/token validity.
-    # To avoid breaking the UI, fall back to Finnhub (preferred) or mock.
-    if not STEADY_API_TOKEN:
-        finnhub_payload = fetch_news_from_finnhub(tickers)
-        if finnhub_payload:
-            finnhub_payload["warning"] = "STEADY_API_TOKEN is not configured; returned Finnhub news instead"
-            # Add sentiment analysis
-            if include_sentiment and finnhub_payload.get('body'):
-                finnhub_payload['body'] = analyze_news_sentiment(finnhub_payload['body'])
-                finnhub_payload['sentimentSummary'] = get_sentiment_summary(finnhub_payload['body'])
-            return jsonify(finnhub_payload), 200
-        mock_payload = get_mock_news_payload(
-            tickers,
-            warning="STEADY_API_TOKEN is not configured and Finnhub is unavailable; returning mock news"
-        )
-        if include_sentiment and mock_payload.get('body'):
-            mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
-            mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
-        return jsonify(mock_payload), 200
-
-    news_url = 'https://api.steadyapi.com/v1/markets/news'
-    params = {'ticker': tickers}
-    headers = {'Authorization': f'Bearer {STEADY_API_TOKEN}'}
-
-    try:
-        response = requests.get(news_url, headers=headers, params=params, timeout=10)
-        if response.status_code == 200:
+    
+    print(f"[NEWS] Fetching news for tickers: {tickers}, sentiment analysis: {include_sentiment}")
+    
+    # Fetch news from Finnhub
+    finnhub_payload = fetch_news_from_finnhub(tickers)
+    
+    if finnhub_payload and finnhub_payload.get('body'):
+        print(f"[NEWS] Retrieved {len(finnhub_payload['body'])} news items from Finnhub")
+        
+        # Add sentiment analysis and indexing
+        if include_sentiment:
             try:
-                payload = response.json()
-                # Add sentiment analysis to news items
-                if include_sentiment and payload.get('body'):
-                    payload['body'] = analyze_news_sentiment(payload['body'])
-                    payload['sentimentSummary'] = get_sentiment_summary(payload['body'])
-                return jsonify(payload), 200
-            except ValueError:
-                mock_payload = get_mock_news_payload(
-                    tickers,
-                    warning="SteadyAPI returned non-JSON response; returning mock news",
-                    upstream_status=200,
-                )
-                if include_sentiment and mock_payload.get('body'):
-                    mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
-                    mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
-                return jsonify(mock_payload), 200
-
-        finnhub_payload = fetch_news_from_finnhub(tickers)
-        if finnhub_payload:
-            finnhub_payload["warning"] = f"SteadyAPI request failed ({response.status_code}); returned Finnhub news instead"
-            finnhub_payload["upstreamStatus"] = response.status_code
-            if include_sentiment and finnhub_payload.get('body'):
+                print(f"[NEWS] Analyzing sentiment for {len(finnhub_payload['body'])} items...")
                 finnhub_payload['body'] = analyze_news_sentiment(finnhub_payload['body'])
                 finnhub_payload['sentimentSummary'] = get_sentiment_summary(finnhub_payload['body'])
-            return jsonify(finnhub_payload), 200
-
-        mock_payload = get_mock_news_payload(
-            tickers,
-            warning=f"SteadyAPI request failed ({response.status_code}); returning mock news",
-            upstream_status=response.status_code,
-        )
-        if include_sentiment and mock_payload.get('body'):
+                print("[NEWS] Sentiment analysis complete")
+                
+                # Index in Azure AI Search
+                print("[NEWS] Indexing news in Azure AI Search...")
+                index_news_documents(finnhub_payload['body'])
+                print("[NEWS] Indexing complete")
+                
+            except Exception as e:
+                print(f"[NEWS] ERROR during sentiment/indexing: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return jsonify(finnhub_payload), 200
+    
+    # Fallback to mock data if Finnhub fails
+    print("[NEWS] Finnhub unavailable, using mock data")
+    mock_payload = get_mock_news_payload(
+        tickers,
+        warning="Finnhub API unavailable; returning mock news"
+    )
+    
+    if include_sentiment and mock_payload.get('body'):
+        try:
+            print(f"[NEWS] Analyzing sentiment for {len(mock_payload['body'])} mock items...")
             mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
             mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
-        return jsonify(mock_payload), 200
-    except requests.exceptions.RequestException as e:
-        finnhub_payload = fetch_news_from_finnhub(tickers)
-        if finnhub_payload:
-            finnhub_payload["warning"] = f"SteadyAPI request error; returned Finnhub news instead"
-            finnhub_payload["error"] = str(e)
-            if include_sentiment and finnhub_payload.get('body'):
-                finnhub_payload['body'] = analyze_news_sentiment(finnhub_payload['body'])
-                finnhub_payload['sentimentSummary'] = get_sentiment_summary(finnhub_payload['body'])
-            return jsonify(finnhub_payload), 200
+            
+            print("[NEWS] Indexing mock news...")
+            index_news_documents(mock_payload['body'])
+            
+        except Exception as e:
+            print(f"[NEWS] ERROR during mock sentiment/indexing: {e}")
+    
+    return jsonify(mock_payload), 200
 
-        mock_payload = get_mock_news_payload(
-            tickers,
-            warning=f"SteadyAPI request error: {str(e)}; returning mock news"
+
+@app.route('/api/search/news', methods=['GET'])
+def search_news_endpoint():
+    """Search news using Azure AI Search with advanced filters"""
+    try:
+        # Get query parameters
+        query = request.args.get('q', '*')
+        sentiment_filter = request.args.get('sentiment')  # positive, neutral, negative
+        date_from = request.args.get('from')
+        date_to = request.args.get('to')
+        tickers_param = request.args.get('tickers')
+        top = int(request.args.get('top', 20))
+        
+        # Parse tickers
+        tickers = tickers_param.split(',') if tickers_param else None
+        
+        # Execute search
+        results = search_news(
+            query=query,
+            sentiment_filter=sentiment_filter,
+            date_from=date_from,
+            date_to=date_to,
+            tickers=tickers,
+            top=top
         )
-        if include_sentiment and mock_payload.get('body'):
-            mock_payload['body'] = analyze_news_sentiment(mock_payload['body'])
-            mock_payload['sentimentSummary'] = get_sentiment_summary(mock_payload['body'])
-        return jsonify(mock_payload), 200
+        
+        return jsonify({
+            'results': results,
+            'count': len(results),
+            'query': query,
+            'filters': {
+                'sentiment': sentiment_filter,
+                'dateFrom': date_from,
+                'dateTo': date_to,
+                'tickers': tickers
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/search/suggestions', methods=['GET'])
+def search_suggestions_endpoint():
+    """Get autocomplete suggestions for search query"""
+    try:
+        query = request.args.get('q', '')
+        top = int(request.args.get('top', 5))
+        
+        if not query:
+            return jsonify({'suggestions': []}), 200
+        
+        suggestions = get_search_suggestions(query, top)
+        
+        return jsonify({'suggestions': suggestions}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/search/facets', methods=['GET'])
+def search_facets_endpoint():
+    """Get available facets for filtering"""
+    try:
+        facets = get_search_facets()
+        return jsonify({'facets': facets}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/search/init', methods=['POST'])
+def initialize_search_index():
+    """Initialize the Azure AI Search index (admin endpoint)"""
+    try:
+        success = create_news_index()
+        if success:
+            return jsonify({
+                'message': 'Search index created successfully',
+                'index': 'news-index'
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to create search index'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/search/recreate', methods=['POST'])
+def recreate_search_index():
+    """Delete and recreate the Azure AI Search index with correct schema (admin endpoint)"""
+    try:
+        success = recreate_news_index()
+        if success:
+            return jsonify({
+                'message': 'Search index recreated successfully with correct schema',
+                'index': 'news-index',
+                'note': 'All previous documents have been deleted. Fetch news to reindex.'
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to recreate search index'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
+@app.route('/api/search/status', methods=['GET'])
+def search_status():
+    """Check Azure AI Search configuration status"""
+    import os
+    return jsonify({
+        'configured': bool(os.getenv('AI_SEARCH_ENDPOINT') and os.getenv('AI_SEARCH_KEY')),
+        'endpoint': os.getenv('AI_SEARCH_ENDPOINT', 'Not set'),
+        'has_key': bool(os.getenv('AI_SEARCH_KEY'))
+    }), 200
+
+
+@app.route('/api/search/schema', methods=['GET'])
+def get_search_schema():
+    """Get the current search index schema for debugging"""
+    try:
+        schema = get_index_schema()
+        if schema:
+            return jsonify({'schema': schema, 'index': 'news-index'}), 200
+        else:
+            return jsonify({'error': 'Failed to retrieve schema'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 
 @app.route('/api/sentiment/analyze', methods=['POST'])
@@ -1728,6 +1833,9 @@ def get_mock_news_payload(tickers_csv, warning=None, upstream_status=None):
             "description": f"Mock news item for {t}. Live news is unavailable right now.",
             "pubDate": pub.isoformat() + "Z",
             "link": f"https://finance.yahoo.com/quote/{t}",
+            "url": f"https://finance.yahoo.com/quote/{t}",
+            "source": "Mock News",
+            "tickers": tickers,  # Add tickers array for Azure Search indexing
         })
 
     payload = {
@@ -1799,6 +1907,9 @@ def fetch_news_from_finnhub(tickers_csv):
                 "description": it.get("summary") or it.get("description") or "",
                 "pubDate": pub,
                 "link": it.get("url") or it.get("link") or "#",
+                "url": it.get("url") or it.get("link") or "#",
+                "source": it.get("source") or "Finnhub",
+                "tickers": tickers,  # Add tickers array to each item for Azure Search indexing
             })
 
         return {
