@@ -869,7 +869,6 @@ def market_data_overview():
         {"name": "Dow Jones (DIA)", "symbol": "DIA", "preferred": "twelvedata"},
         {"name": "Russell 2000 (IWM)", "symbol": "IWM", "preferred": "twelvedata"},
         {"name": "Nifty 50", "symbol": "NIFTY50", "preferred": "upstox"},
-        {"name": "Sensex", "symbol": "SENSEX", "preferred": "upstox"},
     ]
 
     trending = [
