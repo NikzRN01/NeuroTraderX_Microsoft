@@ -54,10 +54,14 @@ const SignUp = () => {
     
     // Simulate API call for user registration
     setTimeout(() => {
-      // Store basic user info in localStorage (in a real app, this would be in a database)
+      // Generate a unique userId (in production, this would come from backend)
+      const userId = Date.now().toString();
+      
+      // Store basic user info in localStorage
       localStorage.setItem("authenticated", "true");
       localStorage.setItem("username", values.username);
       localStorage.setItem("email", values.email);
+      localStorage.setItem("userId", userId);
       localStorage.setItem("isNewUser", "true");
       
       toast({

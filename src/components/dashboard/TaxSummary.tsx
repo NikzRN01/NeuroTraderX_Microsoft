@@ -22,11 +22,11 @@ const TaxSummary = () => {
   // Analyze holdings if they exist
   const analyzedHoldings = storedHoldings && storedHoldings.length > 0
     ? storedHoldings
-        .filter(h => h.symbol && h.shares && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate))
+        .filter(h => (h.assetType !== "Gold Investments" ? h.symbol : true) && h.quantity && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate))
         .map(h => 
           analyzeHolding(
-            h.symbol.toUpperCase(),
-            parseFloat(h.shares),
+            h.symbol ? h.symbol.toUpperCase() : h.assetType,
+            parseFloat(h.quantity),
             parseFloat(h.purchasePrice),
             parseFloat(h.currentPrice),
             new Date(h.purchaseDate),

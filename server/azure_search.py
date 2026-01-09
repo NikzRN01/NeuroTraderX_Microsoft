@@ -124,22 +124,15 @@ def delete_news_index():
 
 def recreate_news_index():
     """Delete and recreate the news search index with correct schema"""
-    print("[AZURE SEARCH] Recreating news index...")
-    
     # First, try to delete
     delete_result = delete_news_index()
     
     # Wait longer for Azure to process the deletion (Azure operations can be async)
-    print("[AZURE SEARCH] Waiting 5 seconds for deletion to complete...")
     import time
     time.sleep(5)
     
     # Then create with new schema
     create_result = create_news_index()
-    
-    if create_result:
-        print("[AZURE SEARCH] Index successfully recreated with correct schema")
-    
     return create_result
 
 
@@ -178,27 +171,20 @@ def index_news_documents(news_items: List[Dict]) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    print(f"[AZURE SEARCH] index_news_documents called with {len(news_items) if news_items else 0} items")
-    
     client = get_search_client(NEWS_INDEX_NAME)
     if not client:
-        print("[AZURE SEARCH] WARNING: Skipping indexing - search client not available")
         return False
     
     try:
         # Prepare documents for indexing
         documents = []
         for idx, item in enumerate(news_items):
-            print(f"[AZURE SEARCH] Processing item {idx + 1}/{len(news_items)}: {item.get('title', 'NO TITLE')[:60]}...")
-            
             # Generate unique ID
             doc_id = f"{item.get('title', 'unknown')[:50].replace(' ', '_')}_{idx}"
             doc_id = ''.join(c for c in doc_id if c.isalnum() or c == '_')[:100]
             
             # Extract sentiment data
             sentiment_data = item.get('sentiment', {})
-            print(f"[AZURE SEARCH]   Sentiment data type: {type(sentiment_data)}, value: {sentiment_data}")
-            
             sentiment_label = sentiment_data.get('label', 'neutral') if isinstance(sentiment_data, dict) else 'neutral'
             sentiment_score = sentiment_data.get('score', 0) if isinstance(sentiment_data, dict) else 0
             confidence = sentiment_data.get('confidence', {}) if isinstance(sentiment_data, dict) else {}
@@ -227,12 +213,10 @@ def index_news_documents(news_items: List[Dict]) -> bool:
                 'neutralScore': float(confidence.get('neutral', 0)),
                 'negativeScore': float(confidence.get('negative', 0)),
             }
-            print(f"[AZURE SEARCH]   Document prepared: sentiment={sentiment_label}, score={sentiment_score}")
             documents.append(document)
         
         # Upload documents in batches
         if documents:
-            print(f"[AZURE SEARCH] Uploading {len(documents)} documents to Azure AI Search...")
             result = client.upload_documents(documents=documents)
             success_count = sum(1 for r in result if r.succeeded)
             failed_count = len(documents) - success_count

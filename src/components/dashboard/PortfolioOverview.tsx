@@ -3,44 +3,165 @@ import { useState, useEffect } from "react";
 import { ArrowUpRight, ArrowDownRight, TrendingUp, AlertCircle } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 import LineChart from "@/components/ui/LineChart";
+import { loadHoldingsFromStorage } from "@/utils/taxCalculationsPhase2";
+import { analyzeHolding, formatCurrency } from "@/utils/taxCalculations";
+import { priceApi } from "@/services/api";
+import { toast } from "sonner";
 
 const PortfolioOverview = () => {
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>("7 Days");
   const [portfolioData, setPortfolioData] = useState({
-    totalValue: 125630.45,
-    totalGrowth: 11800,
-    totalGrowthPercentage: 12.4,
+    totalValue: 0,
+    totalGrowth: 0,
+    totalGrowthPercentage: 0,
     riskLevel: "Low",
   });
   const [chartData, setChartData] = useState<{ name: string; value: number }[]>([]);
   const [investmentTypes, setInvestmentTypes] = useState([
-    { name: "Stock Investments", value: 26000, growth: 2889, icon: "📈" },
-    { name: "Mutual Funds", value: 28000, growth: 2996, icon: "📊" },
-    { name: "Crypto Account", value: 25000, growth: 2447, icon: "🪙" },
-    { name: "Gold Investments", value: 29000, growth: 2899, icon: "🪙" },
+    { name: "Stock Investments", value: 0, growth: 0, icon: "📈" },
+    { name: "Mutual Funds", value: 0, growth: 0, icon: "📊" },
+    { name: "Crypto Account", value: 0, growth: 0, icon: "🪙" },
+    { name: "Gold Investments", value: 0, growth: 0, icon: "🪙" },
   ]);
+  const [loading, setLoading] = useState(true);
+
+  // Validate date format
+  const isValidDate = (dateString: string): boolean => {
+    if (!dateString) return false;
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString)) return false;
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+  };
 
   useEffect(() => {
-    // This would be replaced with actual API calls to fetch user data
-    const fetchUserData = async () => {
+    const fetchPortfolioData = async () => {
+      setLoading(true);
       try {
-        // Fetch from Supabase or your API
-        // For now, we leave it at zero values
+        // Load holdings from TaxOptimization storage
+        const storedHoldings = loadHoldingsFromStorage();
         
-        // Example of chart data structure (empty for now)
-        const emptyChartData = Array(7).fill(0).map((_, i) => ({
-          name: `Day ${i + 1}`,
-          value: 0
+        if (!storedHoldings || storedHoldings.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        // Filter complete holdings
+        const completeHoldings = storedHoldings.filter(h => 
+          (h.assetType !== "Gold Investments" ? h.symbol : true) && 
+          h.quantity && 
+          h.purchasePrice && 
+          h.currentPrice && 
+          isValidDate(h.purchaseDate)
+        );
+
+        if (completeHoldings.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        // Fetch current prices for stocks and mutual funds
+        const updatedHoldings = await Promise.all(
+          completeHoldings.map(async (h) => {
+            let currentPrice = parseFloat(h.currentPrice);
+            
+            // Fetch real-time price for stocks and mutual funds
+            if (h.symbol && (h.assetType === "Stock Investments" || h.assetType === "Mutual Funds")) {
+              try {
+                const priceData = h.assetType === "Stock Investments" 
+                  ? await priceApi.getStockPrice(h.symbol)
+                  : await priceApi.getMutualFundPrice(h.symbol);
+                
+                if (priceData && priceData.currentPrice) {
+                  currentPrice = priceData.currentPrice;
+                }
+              } catch (error) {
+                console.error(`Failed to fetch price for ${h.symbol}`);
+              }
+            }
+            
+            return {
+              ...h,
+              currentPrice: currentPrice.toString(),
+            };
+          })
+        );
+
+        // Calculate portfolio totals
+        let totalValue = 0;
+        let totalCostBasis = 0;
+        const typeValues: Record<string, { value: number; costBasis: number }> = {
+          "Stock Investments": { value: 0, costBasis: 0 },
+          "Mutual Funds": { value: 0, costBasis: 0 },
+          "Crypto Account": { value: 0, costBasis: 0 },
+          "Gold Investments": { value: 0, costBasis: 0 },
+        };
+
+        updatedHoldings.forEach(h => {
+          const quantity = parseFloat(h.quantity);
+          const purchasePrice = parseFloat(h.purchasePrice);
+          const currentPrice = parseFloat(h.currentPrice);
+          const currentValue = quantity * currentPrice;
+          const costBasis = quantity * purchasePrice;
+
+          totalValue += currentValue;
+          totalCostBasis += costBasis;
+
+          if (typeValues[h.assetType]) {
+            typeValues[h.assetType].value += currentValue;
+            typeValues[h.assetType].costBasis += costBasis;
+          }
+        });
+
+        const totalGrowth = totalValue - totalCostBasis;
+        const totalGrowthPercentage = totalCostBasis > 0 ? (totalGrowth / totalCostBasis) * 100 : 0;
+
+        // Update portfolio data
+        setPortfolioData({
+          totalValue,
+          totalGrowth,
+          totalGrowthPercentage,
+          riskLevel: totalGrowthPercentage > 15 ? "High" : totalGrowthPercentage > 5 ? "Medium" : "Low",
+        });
+
+        // Update investment types
+        const updatedTypes = investmentTypes.map(type => ({
+          ...type,
+          value: typeValues[type.name].value,
+          growth: typeValues[type.name].value - typeValues[type.name].costBasis,
         }));
+        setInvestmentTypes(updatedTypes);
+
+        // Generate chart data for the selected time range
+        const days = selectedTimeRange === "7 Days" ? 7 : selectedTimeRange === "14 Days" ? 14 : 30;
+        const chartPoints = [];
         
-        setChartData(emptyChartData);
+        for (let i = 0; i < days; i++) {
+          const date = new Date();
+          date.setDate(date.getDate() - (days - i - 1));
+          
+          // Simulate historical growth - in production, this would come from historical data
+          const growthFactor = 1 + (totalGrowthPercentage / 100) * (i / days);
+          const value = totalCostBasis * growthFactor;
+          
+          chartPoints.push({
+            name: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            value: Math.round(value * 100) / 100,
+          });
+        }
+        
+        setChartData(chartPoints);
+
       } catch (error) {
-        console.error("Failed to fetch user data:", error);
+        console.error('Failed to fetch portfolio data:', error);
+        toast.error('Failed to load portfolio data');
+      } finally {
+        setLoading(false);
       }
     };
     
-    fetchUserData();
-  }, []);
+    fetchPortfolioData();
+  }, [selectedTimeRange]);
 
   const timeRangeClass = (range: string) =>
     `px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${

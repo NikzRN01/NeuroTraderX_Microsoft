@@ -30,6 +30,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { holdingsApi } from "@/services/api";
+import { saveHoldingsToStorage } from "@/utils/taxCalculationsPhase2";
 
 // Define the schema for a single investment
 const investmentSchema = z.object({
@@ -100,20 +102,80 @@ const Onboarding = () => {
       return;
     }
     
-    // In a real app, this would save to a database
+    // Convert onboarding data to TaxOptimization format
+    const taxOptimizationHoldings: Array<{
+      id: string;
+      symbol: string;
+      assetType: string;
+      quantity: string;
+      purchasePrice: string;
+      currentPrice: string;
+      purchaseDate: string;
+    }> = [];
+    
+    // Map asset categories to asset types
+    const assetTypeMap: Record<string, string> = {
+      stocks: 'Stock Investments',
+      mutualFunds: 'Mutual Funds',
+      crypto: 'Crypto Account',
+      gold: 'Gold Investments',
+    };
+    
+    // Convert each category
+    Object.entries(values).forEach(([category, investments]) => {
+      if (investments && Array.isArray(investments)) {
+        investments.forEach((inv, index) => {
+          taxOptimizationHoldings.push({
+            id: `${category}-${index}-${Date.now()}`,
+            symbol: inv.company.toUpperCase(),
+            assetType: assetTypeMap[category] || 'Stock Investments',
+            quantity: inv.amount.replace(/[$,]/g, ''), // Remove $ and commas
+            purchasePrice: '0', // We don't have purchase price from onboarding, user will update
+            currentPrice: '', // Will be fetched later
+            purchaseDate: inv.purchaseDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
+          });
+        });
+      }
+    });
+    
+    // Save to localStorage (TaxOptimization format)
+    saveHoldingsToStorage(taxOptimizationHoldings);
+    
+    // Save original onboarding data
     localStorage.setItem("investmentData", JSON.stringify(values));
     localStorage.setItem("isNewUser", "false");
     
-    // Simulate API call
-    setTimeout(() => {
-      toast({
-        title: "Profile Complete!",
-        description: "Your investment profile has been set up successfully.",
+    // Save to backend database
+    const userId = parseInt(localStorage.getItem("userId") || "1", 10); // Get userId from localStorage
+    
+    holdingsApi.syncHoldings(userId, taxOptimizationHoldings, 'upload')
+      .then((result) => {
+        if (result && result.success) {
+          toast({
+            title: "Profile Complete!",
+            description: "Your investment profile has been saved successfully.",
+          });
+        } else {
+          toast({
+            title: "Profile Saved Locally",
+            description: "Holdings saved to your device. They will sync when you're online.",
+            variant: "default",
+          });
+        }
+        
+        setIsSubmitting(false);
+        navigate("/"); // Redirect to dashboard
+      })
+      .catch((error) => {
+        console.error('Failed to sync holdings:', error);
+        toast({
+          title: "Profile Saved Locally",
+          description: "Holdings saved to your device. They will sync when you're online.",
+          variant: "default",
+        });
+        setIsSubmitting(false);
+        navigate("/"); // Redirect to dashboard anyway
       });
-      
-      setIsSubmitting(false);
-      navigate("/"); // Redirect to dashboard
-    }, 1500);
   }
 
   return (

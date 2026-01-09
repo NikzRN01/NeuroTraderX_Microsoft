@@ -202,3 +202,80 @@ export const aiApi = {
       body: JSON.stringify({ message }),
     }),
 };
+
+// Price API
+export const priceApi = {
+  getStockPrice: async (symbol: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/stock-price?symbol=${encodeURIComponent(symbol)}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch price for ${symbol}`);
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Price API Error:', error);
+      return null;
+    }
+  },
+  
+  getMutualFundPrice: async (symbol: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/mutual-fund-price?symbol=${encodeURIComponent(symbol)}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch NAV for ${symbol}`);
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Price API Error:', error);
+      return null;
+    }
+  },
+};
+
+// Holdings Sync API
+export const holdingsApi = {
+  syncHoldings: async (userId: number, holdings: unknown[], action: 'upload' | 'sync' = 'sync') => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/holdings/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: userId, holdings, action }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to sync holdings');
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Holdings Sync Error:', error);
+      return null;
+    }
+  },
+  
+  getUserHoldings: async (userId: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/portfolio`, {
+        method: 'GET',
+        headers: {
+          'User-ID': userId.toString(),
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch holdings');
+      }
+      
+      const data = await response.json();
+      return data.holdings || [];
+    } catch (error) {
+      console.error('Get Holdings Error:', error);
+      return [];
+    }
+  },
+};

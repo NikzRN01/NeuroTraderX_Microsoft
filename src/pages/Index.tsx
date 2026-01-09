@@ -9,8 +9,9 @@ import MarketTrends from "@/components/dashboard/MarketTrends";
 import TaxSummary from "@/components/dashboard/TaxSummary";
 import GlassCard from "@/components/ui/GlassCard";
 import {insightRecommendations } from "@/utils/mockData";
-import { newsApi } from "@/services/api"; 
+import { newsApi, holdingsApi } from "@/services/api"; 
 import { ArrowRight, TrendingUp, ShieldCheck, Loader2 } from "lucide-react";
+import { saveHoldingsToStorage, loadHoldingsFromStorage } from "@/utils/taxCalculationsPhase2";
 
 interface NewsItem {
   id: number;
@@ -95,6 +96,40 @@ const Dashboard = () => {
     };
     
     void loadNews();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Background sync holdings from backend
+  useEffect(() => {
+    let cancelled = false;
+    
+    const syncHoldings = async () => {
+      const userId = localStorage.getItem("userId");
+      if (!userId) return;
+      
+      try {
+        const backendHoldings = await holdingsApi.getUserHoldings(parseInt(userId, 10));
+        const localHoldings = loadHoldingsFromStorage();
+        
+        // If backend has holdings and they're different from local, update localStorage
+        if (backendHoldings && backendHoldings.length > 0 && !cancelled) {
+          const backendIds = backendHoldings.map((h: { id: string }) => h.id).sort().join(',');
+          const localIds = localHoldings.map((h: { id: string }) => h.id).sort().join(',');
+          
+          if (backendIds !== localIds) {
+            saveHoldingsToStorage(backendHoldings);
+            console.log('Synced holdings from backend');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync holdings:', error);
+      }
+    };
+    
+    syncHoldings();
+    
     return () => {
       cancelled = true;
     };

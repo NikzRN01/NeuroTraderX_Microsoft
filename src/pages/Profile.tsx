@@ -1,17 +1,37 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
 import { User, Mail, Lock, Settings, Upload, HelpCircle, LogOut, Edit, Phone, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/providers/ThemeProvider";
+import { holdingsApi } from "@/services/api";
+import { loadHoldingsFromStorage } from "@/utils/taxCalculationsPhase2";
 
 const Profile = () => {
   const [activeTab, setActiveTab] = useState("settings");
   const navigate = useNavigate();
   const { toast } = useToast();
   const { ThemeToggle } = useTheme();
+  
+  // User data from localStorage
+  const [userData, setUserData] = useState({
+    username: localStorage.getItem("username") || "User",
+    email: localStorage.getItem("email") || "user@example.com",
+    phone: "",
+    country: "United States"
+  });
+  
+  // Get user initials
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -57,25 +77,42 @@ const Profile = () => {
       description: `Your data is being exported in ${format} format. Download will begin shortly.`
     });
     
-    // Mock download functionality
     setTimeout(() => {
-      // In a real application, this would be a generated file from the server
-      const dummyData = {
-        portfolio: [
-          { asset: "AAPL", quantity: 10, value: 1750.45 },
-          { asset: "GOOGL", quantity: 5, value: 6532.50 },
-          { asset: "BTC", quantity: 0.5, value: 15275.80 },
-        ],
-        insights: [
-          { title: "Portfolio Diversification", score: 85 },
-          { title: "Risk Assessment", score: 65 },
-        ]
+      // Get actual holdings from localStorage
+      const holdings = loadHoldingsFromStorage();
+      
+      // Calculate portfolio data
+      const portfolioData = holdings.map(h => ({
+        symbol: h.symbol || h.assetType,
+        assetType: h.assetType,
+        quantity: h.quantity,
+        purchasePrice: h.purchasePrice,
+        currentPrice: h.currentPrice,
+        purchaseDate: h.purchaseDate,
+        currentValue: (parseFloat(h.quantity) * parseFloat(h.currentPrice || h.purchasePrice)).toFixed(2)
+      }));
+      
+      const exportData = {
+        user: {
+          username: userData.username,
+          email: userData.email
+        },
+        portfolio: portfolioData,
+        exportDate: new Date().toISOString(),
+        totalHoldings: holdings.length
       };
       
-      const dataStr = JSON.stringify(dummyData, null, 2);
-      const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`;
+      const dataStr = format === 'JSON' 
+        ? JSON.stringify(exportData, null, 2)
+        : format === 'CSV'
+        ? convertToCSV(portfolioData)
+        : JSON.stringify(exportData, null, 2);
       
-      const exportFileName = `neurotradex_export_${new Date().toISOString().slice(0, 10)}.json`;
+      const mimeType = format === 'CSV' ? 'text/csv' : 'application/json';
+      const fileExt = format.toLowerCase();
+      const dataUri = `data:${mimeType};charset=utf-8,${encodeURIComponent(dataStr)}`;
+      
+      const exportFileName = `neurotradex_export_${new Date().toISOString().slice(0, 10)}.${fileExt}`;
       
       const linkElement = document.createElement('a');
       linkElement.setAttribute('href', dataUri);
@@ -83,6 +120,14 @@ const Profile = () => {
       linkElement.click();
       linkElement.remove();
     }, 1500);
+  };
+  
+  // Helper function to convert to CSV
+  const convertToCSV = (data: any[]) => {
+    if (data.length === 0) return '';
+    const headers = Object.keys(data[0]).join(',');
+    const rows = data.map(row => Object.values(row).join(','));
+    return [headers, ...rows].join('\n');
   };
 
   return (
@@ -98,15 +143,15 @@ const Profile = () => {
             <div className="flex flex-col items-center">
               <div className="relative">
                 <div className="h-20 w-20 rounded-full overflow-hidden bg-secondary flex items-center justify-center relative">
-                  <span className="text-2xl font-semibold text-foreground">NN</span>
+                  <span className="text-2xl font-semibold text-foreground">{getInitials(userData.username)}</span>
                   <div className="absolute inset-0 bg-gradient-radial from-blue-600/20 to-blue-800/40"></div>
                 </div>
                 <button className="absolute -right-1 -bottom-1 rounded-full p-1 bg-secondary text-primary">
                   <Edit className="h-3 w-3" />
                 </button>
               </div>
-              <h2 className="mt-3 text-lg font-medium">Nikhil Naraniya</h2>
-              <p className="text-sm text-muted-foreground">Premium Member</p>
+              <h2 className="mt-3 text-lg font-medium">{userData.username}</h2>
+              <p className="text-sm text-muted-foreground">Member</p>
               <div className="w-full border-t border-border mt-4 pt-4">
                 <ul className="space-y-1">
                   {profileItems.map((item) => (
@@ -148,7 +193,8 @@ const Profile = () => {
                           <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <input
                             type="text"
-                            defaultValue="Nikhil Naraniya"
+                            value={userData.username}
+                            onChange={(e) => setUserData({...userData, username: e.target.value})}
                             className="w-full bg-secondary py-2 pl-10 pr-4 rounded-lg text-sm"
                           />
                         </div>
@@ -159,7 +205,8 @@ const Profile = () => {
                           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <input
                             type="email"
-                            defaultValue="nikznaraniya@gmail.com"
+                            value={userData.email}
+                            onChange={(e) => setUserData({...userData, email: e.target.value})}
                             className="w-full bg-secondary py-2 pl-10 pr-4 rounded-lg text-sm"
                           />
                         </div>
@@ -168,15 +215,21 @@ const Profile = () => {
                         <label className="block text-sm text-muted-foreground mb-1">Phone Number</label>
                         <input
                           type="tel"
-                          defaultValue="+91 94276 20852"
+                          value={userData.phone}
+                          onChange={(e) => setUserData({...userData, phone: e.target.value})}
+                          placeholder="Enter phone number"
                           className="w-full bg-secondary py-2 px-4 rounded-lg text-sm"
                         />
                       </div>
                       <div>
                         <label className="block text-sm text-muted-foreground mb-1">Country</label>
-                        <select className="w-full bg-secondary py-2 px-4 rounded-lg text-sm">
-                          <option>India</option>
+                        <select 
+                          value={userData.country}
+                          onChange={(e) => setUserData({...userData, country: e.target.value})}
+                          className="w-full bg-secondary py-2 px-4 rounded-lg text-sm"
+                        >
                           <option>United States</option>
+                          <option>India</option>
                           <option>Canada</option>
                           <option>United Kingdom</option>
                           <option>Australia</option>

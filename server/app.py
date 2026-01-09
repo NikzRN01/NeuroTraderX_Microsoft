@@ -207,10 +207,12 @@ class Portfolio(db.Model):
     __tablename__ = 'portfolios'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    ticker = db.Column(db.String(10), nullable=False)
+    symbol = db.Column(db.String(20), nullable=True)  # Renamed from ticker, nullable for Gold
+    asset_type = db.Column(db.String(50), nullable=False, default='Stock Investments')  # Stock Investments, Mutual Funds, Crypto Account, Gold Investments
     quantity = db.Column(db.Float, nullable=False)
     purchase_price = db.Column(db.Float, nullable=False)
-    purchase_date = db.Column(db.DateTime, default=datetime.utcnow)
+    current_price = db.Column(db.Float, nullable=True)  # Cache of last known price
+    purchase_date = db.Column(db.DateTime, nullable=False)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -254,10 +256,12 @@ def get_portfolio():
         "holdings": [
             {
                 "id": h.id,
-                "ticker": h.ticker,
-                "quantity": h.quantity,
-                "purchase_price": h.purchase_price,
-                "purchase_date": h.purchase_date.isoformat() if h.purchase_date else None,
+                "symbol": h.symbol,
+                "assetType": h.asset_type,
+                "quantity": str(h.quantity),
+                "purchasePrice": str(h.purchase_price),
+                "currentPrice": str(h.current_price) if h.current_price else "",
+                "purchaseDate": h.purchase_date.strftime('%Y-%m-%d') if h.purchase_date else "",
                 "notes": h.notes,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
                 "updated_at": h.updated_at.isoformat() if h.updated_at else None,
@@ -312,27 +316,60 @@ def upload_portfolio():
         if not isinstance(item, dict):
             return jsonify({"error": f"holding at index {idx} must be an object"}), 400
 
-        ticker = (item.get('ticker') or item.get('symbol') or '').strip().upper()
-        if not ticker:
-            return jsonify({"error": f"holding at index {idx} is missing ticker"}), 400
+        # Support both camelCase (frontend) and snake_case formats
+        symbol = (item.get('symbol') or item.get('ticker') or '').strip().upper()
+        asset_type = item.get('assetType') or item.get('asset_type') or 'Stock Investments'
+        
+        # Gold Investments don't require symbol
+        if not symbol and asset_type != 'Gold Investments':
+            return jsonify({"error": f"holding at index {idx} is missing symbol"}), 400
 
         try:
             quantity = float(item.get('quantity'))
         except (TypeError, ValueError):
-            return jsonify({"error": f"holding {ticker} has invalid quantity"}), 400
+            return jsonify({"error": f"holding {symbol or asset_type} has invalid quantity"}), 400
 
         try:
-            purchase_price = float(item.get('purchase_price') if 'purchase_price' in item else item.get('purchasePrice'))
+            purchase_price = float(item.get('purchasePrice') or item.get('purchase_price'))
         except (TypeError, ValueError):
-            return jsonify({"error": f"holding {ticker} has invalid purchase_price"}), 400
+            return jsonify({"error": f"holding {symbol or asset_type} has invalid purchase_price"}), 400
+
+        # Get current price if provided
+        current_price = None
+        if 'currentPrice' in item or 'current_price' in item:
+            try:
+                current_price = float(item.get('currentPrice') or item.get('current_price'))
+            except (TypeError, ValueError):
+                pass  # Optional field, ignore errors
+
+        # Parse purchase date
+        purchase_date = None
+        date_str = item.get('purchaseDate') or item.get('purchase_date')
+        if date_str:
+            if isinstance(date_str, str):
+                try:
+                    purchase_date = datetime.strptime(date_str, '%Y-%m-%d')
+                except ValueError:
+                    try:
+                        purchase_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    except:
+                        pass
+            elif isinstance(date_str, datetime):
+                purchase_date = date_str
+        
+        if not purchase_date:
+            purchase_date = datetime.utcnow()
 
         notes = item.get('notes')
 
         rec = Portfolio(
             user_id=user_id_int,
-            ticker=ticker,
+            symbol=symbol if symbol else None,
+            asset_type=asset_type,
             quantity=quantity,
             purchase_price=purchase_price,
+            current_price=current_price,
+            purchase_date=purchase_date,
             notes=notes,
         )
         db.session.add(rec)
@@ -345,9 +382,10 @@ def upload_portfolio():
         "created": [
             {
                 "id": h.id,
-                "ticker": h.ticker,
+                "symbol": h.symbol,
+                "assetType": h.asset_type,
                 "quantity": h.quantity,
-                "purchase_price": h.purchase_price,
+                "purchasePrice": h.purchase_price,
             }
             for h in created
         ],
@@ -1923,6 +1961,160 @@ def fetch_news_from_finnhub(tickers_csv):
         }
     except Exception:
         return None
+
+@app.route('/api/stock-price', methods=['GET'])
+def get_stock_price():
+    """Fetch current stock price using yfinance"""
+    try:
+        symbol = request.args.get('symbol', '').strip().upper()
+        if not symbol:
+            return jsonify({"error": "Symbol is required"}), 400
+        
+        # Fetch stock data from yfinance
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        
+        # Get current price
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+        
+        if current_price is None:
+            return jsonify({"error": f"Could not fetch price for {symbol}"}), 404
+        
+        return jsonify({
+            "symbol": symbol,
+            "currentPrice": current_price,
+            "currency": info.get('currency', 'USD'),
+            "marketState": info.get('marketState', 'UNKNOWN'),
+            "longName": info.get('longName', symbol),
+            "previousClose": info.get('previousClose'),
+            "dayHigh": info.get('dayHigh'),
+            "dayLow": info.get('dayLow'),
+        }), 200
+        
+    except Exception as e:
+        print(f"ERROR fetching stock price for {symbol}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/mutual-fund-price', methods=['GET'])
+def get_mutual_fund_price():
+    """Fetch current mutual fund price using yfinance"""
+    try:
+        symbol = request.args.get('symbol', '').strip().upper()
+        if not symbol:
+            return jsonify({"error": "Symbol is required"}), 400
+        
+        # Fetch mutual fund data from yfinance
+        fund = yf.Ticker(symbol)
+        info = fund.info
+        
+        # Get current NAV
+        current_price = info.get('navPrice') or info.get('previousClose') or info.get('regularMarketPrice')
+        
+        if current_price is None:
+            return jsonify({"error": f"Could not fetch NAV for {symbol}"}), 404
+        
+        return jsonify({
+            "symbol": symbol,
+            "currentPrice": current_price,
+            "currency": info.get('currency', 'USD'),
+            "longName": info.get('longName', symbol),
+            "fundFamily": info.get('fundFamily', 'N/A'),
+            "category": info.get('category', 'N/A'),
+        }), 200
+        
+    except Exception as e:
+        print(f"ERROR fetching mutual fund price for {symbol}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/holdings/sync', methods=['POST'])
+def sync_holdings():
+    """Sync holdings between frontend and backend.
+    
+    Frontend sends:
+    - user_id: int
+    - holdings: array of holding objects in TaxOptimization format
+    - action: 'upload' or 'sync'
+    
+    Returns updated holdings from database.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        user_id = data.get('user_id')
+        holdings = data.get('holdings', [])
+        action = data.get('action', 'sync')
+        
+        if user_id is None:
+            return jsonify({"error": "user_id is required"}), 400
+        
+        try:
+            user_id_int = int(user_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "user_id must be an integer"}), 400
+        
+        user = User.query.get(user_id_int)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        if action == 'upload' and holdings:
+            # Clear existing holdings and upload new ones
+            Portfolio.query.filter_by(user_id=user_id_int).delete()
+            
+            for item in holdings:
+                symbol = item.get('symbol', '').strip().upper() if item.get('symbol') else None
+                asset_type = item.get('assetType', 'Stock Investments')
+                
+                # Parse purchase date
+                purchase_date = datetime.utcnow()
+                date_str = item.get('purchaseDate')
+                if date_str:
+                    try:
+                        purchase_date = datetime.strptime(date_str, '%Y-%m-%d')
+                    except:
+                        pass
+                
+                # Get current price if provided
+                current_price = None
+                if item.get('currentPrice'):
+                    try:
+                        current_price = float(item.get('currentPrice'))
+                    except:
+                        pass
+                
+                rec = Portfolio(
+                    user_id=user_id_int,
+                    symbol=symbol,
+                    asset_type=asset_type,
+                    quantity=float(item.get('quantity', 0)),
+                    purchase_price=float(item.get('purchasePrice', 0)),
+                    current_price=current_price,
+                    purchase_date=purchase_date,
+                )
+                db.session.add(rec)
+            
+            db.session.commit()
+        
+        # Return all holdings from database
+        db_holdings = Portfolio.query.filter_by(user_id=user_id_int).order_by(Portfolio.created_at.desc()).all()
+        
+        return jsonify({
+            "success": True,
+            "holdings": [
+                {
+                    "id": str(h.id),
+                    "symbol": h.symbol or "",
+                    "assetType": h.asset_type,
+                    "quantity": str(h.quantity),
+                    "purchasePrice": str(h.purchase_price),
+                    "currentPrice": str(h.current_price) if h.current_price else "",
+                    "purchaseDate": h.purchase_date.strftime('%Y-%m-%d') if h.purchase_date else "",
+                }
+                for h in db_holdings
+            ],
+        }), 200
+        
+    except Exception as e:
+        print(f"ERROR syncing holdings: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 # Run the Flask application
 if __name__ == '__main__':

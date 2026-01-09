@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { holdingsApi } from "@/services/api";
+import { saveHoldingsToStorage } from "@/utils/taxCalculationsPhase2";
 
 const formSchema = z.object({
   username: z.string().min(3, {
@@ -44,15 +46,37 @@ const SignIn = () => {
     setIsLoading(true);
     
     // Simulate API call for authentication
-    setTimeout(() => {
+    setTimeout(async () => {
       // For demo purposes, consider all logins successful
+      // In production, this would validate credentials with backend
+      const userId = localStorage.getItem("userId") || Date.now().toString();
+      
       localStorage.setItem("authenticated", "true");
       localStorage.setItem("username", values.username);
+      localStorage.setItem("userId", userId);
       
-      toast({
-        title: "Welcome back!",
-        description: "You have successfully signed in.",
-      });
+      // Fetch user holdings from backend and sync to localStorage
+      try {
+        const holdings = await holdingsApi.getUserHoldings(parseInt(userId, 10));
+        if (holdings && holdings.length > 0) {
+          saveHoldingsToStorage(holdings);
+          toast({
+            title: "Welcome back!",
+            description: `Loaded ${holdings.length} holding${holdings.length > 1 ? 's' : ''} from your account.`,
+          });
+        } else {
+          toast({
+            title: "Welcome back!",
+            description: "You have successfully signed in.",
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch holdings:', error);
+        toast({
+          title: "Welcome back!",
+          description: "You have successfully signed in.",
+        });
+      }
       
       setIsLoading(false);
       navigate("/"); // Redirect to dashboard

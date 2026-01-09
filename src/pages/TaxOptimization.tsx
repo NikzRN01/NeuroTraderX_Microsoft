@@ -51,6 +51,7 @@ import {
   type OptimizationStrategy,
 } from "@/utils/taxCalculationsPhase2";
 import { toast } from "sonner";
+import { priceApi, holdingsApi } from "@/services/api";
 
 interface HoldingInput {
   id: string;
@@ -99,6 +100,13 @@ const TaxOptimization = () => {
   useEffect(() => {
     if (holdings.some(h => h.symbol || h.quantity || h.purchasePrice)) {
       saveHoldingsToStorage(holdings);
+      
+      // Background sync to backend (don't wait for it)
+      const userId = localStorage.getItem("userId");
+      if (userId) {
+        holdingsApi.syncHoldings(parseInt(userId, 10), holdings, 'upload')
+          .catch((error) => console.error('Failed to sync to backend:', error));
+      }
     }
   }, [holdings]);
 
@@ -144,6 +152,32 @@ const TaxOptimization = () => {
     setHoldings(
       holdings.map(h => (h.id === id ? { ...h, [field]: value } : h))
     );
+  };
+
+  // Fetch current price when symbol is entered or asset type changes
+  const fetchCurrentPrice = async (id: string, symbol: string, assetType: string) => {
+    if (!symbol || symbol.length < 2) return;
+    
+    try {
+      let priceData = null;
+      
+      if (assetType === "Stock Investments") {
+        priceData = await priceApi.getStockPrice(symbol);
+      } else if (assetType === "Mutual Funds") {
+        priceData = await priceApi.getMutualFundPrice(symbol);
+      }
+      // For Crypto and Gold, we don't have real-time APIs yet
+      
+      if (priceData && priceData.currentPrice) {
+        setHoldings(holdings.map(h => 
+          h.id === id ? { ...h, currentPrice: priceData.currentPrice.toString() } : h
+        ));
+        toast.success(`Fetched current price for ${symbol}: $${priceData.currentPrice}`);
+      }
+    } catch (error) {
+      console.error('Failed to fetch price:', error);
+      // Silently fail - user can still enter manually
+    }
   };
 
   // Helper function to validate complete date (YYYY-MM-DD format)
@@ -439,14 +473,26 @@ const TaxOptimization = () => {
                     </div>
                     <div>
                       <Label className="text-xs">Current Price</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={holding.currentPrice}
-                        onChange={(e) => updateHolding(holding.id, "currentPrice", e.target.value)}
-                        placeholder="175.00"
-                        className="mt-1"
-                      />
+                      <div className="flex gap-2 mt-1">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={holding.currentPrice}
+                          onChange={(e) => updateHolding(holding.id, "currentPrice", e.target.value)}
+                          placeholder="175.00"
+                        />
+                        {(holding.assetType === "Stock Investments" || holding.assetType === "Mutual Funds") && holding.symbol && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fetchCurrentPrice(holding.id, holding.symbol, holding.assetType)}
+                            className="whitespace-nowrap"
+                          >
+                            Fetch
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <Label className="text-xs">Purchase Date</Label>
