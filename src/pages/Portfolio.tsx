@@ -539,15 +539,6 @@ const Portfolio = () => {
                 </div>
               </DialogContent>
             </Dialog>
-            
-            <button className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary text-muted-foreground hover:bg-secondary/80 transition-colors">
-              <Filter className="h-4 w-4" />
-
-            </button>
-            <button className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary text-muted-foreground hover:bg-secondary/80 transition-colors">
-              <Download className="h-4 w-4" />
-              <span className="text-sm">Export</span>
-            </button>
           </div>
         </motion.div>
 
