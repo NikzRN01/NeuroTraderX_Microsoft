@@ -79,34 +79,86 @@ const TaxOptimization = () => {
     },
   ]);
 
-  // Load saved holdings on mount
+  // Load saved holdings on mount and when localStorage changes
   useEffect(() => {
-    const saved = loadHoldingsFromStorage();
-    if (saved && saved.length > 0) {
-      // Filter out completely empty holdings
-      const nonEmptyHoldings = saved.filter(h => 
-        h.symbol || h.quantity || h.purchasePrice || h.currentPrice || h.purchaseDate
-      );
-      
-      if (nonEmptyHoldings.length > 0) {
-        setHoldings(nonEmptyHoldings);
-        setShowInputFields(false);
-        toast.success("Loaded saved holdings");
+    const loadHoldings = () => {
+      const saved = loadHoldingsFromStorage();
+      if (saved && saved.length > 0) {
+        // Filter out completely empty holdings
+        const nonEmptyHoldings = saved.filter(h => 
+          h.symbol || h.quantity || h.purchasePrice || h.currentPrice || h.purchaseDate
+        );
+        
+        if (nonEmptyHoldings.length > 0) {
+          setHoldings(nonEmptyHoldings);
+          setShowInputFields(false);
+        }
       }
-    }
+    };
+
+    // Load on mount
+    loadHoldings();
+
+    // Listen for storage changes (when holdings are added from other pages)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'taxOptimizationHoldings') {
+        loadHoldings();
+        toast.success("Holdings updated");
+      }
+    };
+
+    // Listen for custom event (for same-tab updates)
+    const handleCustomStorageChange = () => {
+      loadHoldings();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('holdingsUpdated', handleCustomStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('holdingsUpdated', handleCustomStorageChange);
+    };
   }, []);
 
-  // Save holdings whenever they change
+  // Helper function to validate complete date (YYYY-MM-DD format)
+  const isValidDate = (dateString: string): boolean => {
+    if (!dateString) return false;
+    // Check if the date string matches the full YYYY-MM-DD format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString)) return false;
+    // Verify it's a valid date
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+  };
+
+  // Helper to check if a holding is complete
+  const isHoldingComplete = (h: HoldingInput): boolean => {
+    // For Gold Investments, symbol is optional
+    const symbolRequired = h.assetType !== "Gold Investments";
+    const hasSymbol = symbolRequired ? !!h.symbol : true;
+    return !!(hasSymbol && h.quantity && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate));
+  };
+
+  // Save holdings whenever they change (only complete holdings with valid dates)
   useEffect(() => {
-    if (holdings.some(h => h.symbol || h.quantity || h.purchasePrice)) {
-      saveHoldingsToStorage(holdings);
+    // Filter to only complete holdings with full valid dates
+    const completeHoldings = holdings.filter(h => isHoldingComplete(h));
+    
+    if (completeHoldings.length > 0) {
+      // Use a timeout to debounce saves
+      const timeoutId = setTimeout(() => {
+        saveHoldingsToStorage(completeHoldings);
+        
+        // Background sync to backend (don't wait for it)
+        const userId = localStorage.getItem("userId");
+        if (userId) {
+          holdingsApi.syncHoldings(parseInt(userId, 10), completeHoldings, 'upload')
+            .catch((error) => console.error('Failed to sync to backend:', error));
+        }
+      }, 500); // Wait 500ms after last change before saving
       
-      // Background sync to backend (don't wait for it)
-      const userId = localStorage.getItem("userId");
-      if (userId) {
-        holdingsApi.syncHoldings(parseInt(userId, 10), holdings, 'upload')
-          .catch((error) => console.error('Failed to sync to backend:', error));
-      }
+      return () => clearTimeout(timeoutId);
     }
   }, [holdings]);
 
@@ -152,51 +204,6 @@ const TaxOptimization = () => {
     setHoldings(
       holdings.map(h => (h.id === id ? { ...h, [field]: value } : h))
     );
-  };
-
-  // Fetch current price when symbol is entered or asset type changes
-  const fetchCurrentPrice = async (id: string, symbol: string, assetType: string) => {
-    if (!symbol || symbol.length < 2) return;
-    
-    try {
-      let priceData = null;
-      
-      if (assetType === "Stock Investments") {
-        priceData = await priceApi.getStockPrice(symbol);
-      } else if (assetType === "Mutual Funds") {
-        priceData = await priceApi.getMutualFundPrice(symbol);
-      }
-      // For Crypto and Gold, we don't have real-time APIs yet
-      
-      if (priceData && priceData.currentPrice) {
-        setHoldings(holdings.map(h => 
-          h.id === id ? { ...h, currentPrice: priceData.currentPrice.toString() } : h
-        ));
-        toast.success(`Fetched current price for ${symbol}: $${priceData.currentPrice}`);
-      }
-    } catch (error) {
-      console.error('Failed to fetch price:', error);
-      // Silently fail - user can still enter manually
-    }
-  };
-
-  // Helper function to validate complete date (YYYY-MM-DD format)
-  const isValidDate = (dateString: string): boolean => {
-    if (!dateString) return false;
-    // Check if the date string matches the full YYYY-MM-DD format
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(dateString)) return false;
-    // Verify it's a valid date
-    const date = new Date(dateString);
-    return !isNaN(date.getTime());
-  };
-
-  // Helper to check if a holding is complete
-  const isHoldingComplete = (h: HoldingInput): boolean => {
-    // For Gold Investments, symbol is optional
-    const symbolRequired = h.assetType !== "Gold Investments";
-    const hasSymbol = symbolRequired ? !!h.symbol : true;
-    return !!(hasSymbol && h.quantity && h.purchasePrice && h.currentPrice && isValidDate(h.purchaseDate));
   };
 
   // Get incomplete holdings for input fields
@@ -473,26 +480,14 @@ const TaxOptimization = () => {
                     </div>
                     <div>
                       <Label className="text-xs">Current Price</Label>
-                      <div className="flex gap-2 mt-1">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={holding.currentPrice}
-                          onChange={(e) => updateHolding(holding.id, "currentPrice", e.target.value)}
-                          placeholder="175.00"
-                        />
-                        {(holding.assetType === "Stock Investments" || holding.assetType === "Mutual Funds") && holding.symbol && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => fetchCurrentPrice(holding.id, holding.symbol, holding.assetType)}
-                            className="whitespace-nowrap"
-                          >
-                            Fetch
-                          </Button>
-                        )}
-                      </div>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={holding.currentPrice}
+                        onChange={(e) => updateHolding(holding.id, "currentPrice", e.target.value)}
+                        placeholder="175.00"
+                        className="mt-1"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs">Purchase Date</Label>

@@ -261,6 +261,9 @@ const Portfolio = () => {
       const updatedHoldings = [...existingHoldings, holdingToAdd];
       saveHoldingsToStorage(updatedHoldings);
 
+      // Dispatch custom event to notify other components
+      window.dispatchEvent(new CustomEvent('holdingsUpdated'));
+
       // Sync to backend
       const userId = parseInt(localStorage.getItem("userId") || "1", 10);
       try {
