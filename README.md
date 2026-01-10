@@ -234,16 +234,7 @@ For more details, see `server/DATABASE_SETUP.md` and `server/setup.md`.
 - `npm run lint`: lints the frontend
 - `npm run server:pycheck`: basic Python syntax check for key backend files
 
-## Demo Flow
 
-**5-Minute Walkthrough:**
-
-1. **Onboarding** → Sign up and set investment preferences (risk tolerance, goals)
-2. **Portfolio** → View summary, performance chart, asset allocation, and top holdings
-3. **Insights** → Enter ticker (e.g., AAPL) → get prediction, recommendation, risk level → export PDF
-4. **News** → Browse sentiment-enriched feed → use Intelligent Search with autocomplete and filters
-5. **Tax Optimization** → Add holdings → view capital gains summary → check wash-sale detection → export CSV
-6. **AI Chat** → Ask "Should I increase tech exposure?" → get concise, actionable response
 
 **Practical Outcomes:**
 - Faster research with unified data and AI insights
