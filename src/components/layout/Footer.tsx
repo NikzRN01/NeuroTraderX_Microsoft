@@ -23,7 +23,10 @@ const Footer = () => {
           </Link>
         </div>
         <div className="text-sm text-muted-foreground">
-          © 2025 NeuroTradeX. All rights reserved.
+          NeuroTraderX uses AI-generated insights and may be inaccurate.
+        </div>
+        <div className="text-sm text-muted-foreground">
+          © 2026 NeuroTradeX. All rights reserved.
         </div>
       </div>
     </footer>

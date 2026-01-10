@@ -6,22 +6,33 @@ This repo contains two services:
 - **frontend**: Vite + React (served on `http://localhost:8080` in dev, `http://localhost:4173` in preview/Docker)
 - **backend**: Flask API (served on `http://localhost:5000`)
 
+## Highlights
+
+✅ **Unified Platform:** Portfolio tracking, AI insights, tax optimization, news, and chat in one interface  
+✅ **AI-Powered:** Stock predictions with Buy/Hold/Sell recommendations, risk levels, and confidence scores  
+✅ **Tax Intelligence:** Advanced capital gains analysis, wash-sale detection, and optimization strategies  
+✅ **Smart Search:** Sentiment-enriched news with Azure AI Search (autocomplete, facets, filters)  
+✅ **Modern Stack:** React + TypeScript, Flask + SQLAlchemy, Azure AI integrations, Docker-ready  
+✅ **Production-Ready:** Clean API contracts, smart caching, graceful fallbacks, cloud-deployable  
+
 ## Features
 
-UI features (React):
-- **Portfolio dashboard** (overview, allocation, holdings, performance metrics)
-- **Markets** (market widgets/data views)
-- **News** (ticker-based and general market news)
-- **Insights** (stock insights & recommendations)
-- **Forecasting** (basic future price / investment projection)
-- **Tax tools** (tax liability / optimization views)
-- **Auth + onboarding** (register/login + preferences)
-- **AI chat** (assistant-style Q&A)
+Frontend (React):
+- **Portfolio dashboard:** summary, performance trends, asset allocation, top holdings.
+- **Markets:** indices overview, mutual fund explorer (CSV or API), TradingView widget.
+- **News:** sentiment-enriched feed with Intelligent Search (autocomplete, facets).
+- **Insights:** ticker analysis with prediction, recommendation, risk, and confidence; PDF export.
+- **Tax Optimization:** capital gains summary, wash-sale detection, lot strategies (FIFO/LIFO/Specific ID), optimization recommendations.
+- **AI Chat:** conversational assistant for investment Q&A.
+- **Auth + Onboarding:** profile preferences and protected routes.
 
-Backend capabilities (Flask):
-- Portfolio storage & retrieval (via SQLAlchemy)
-- Market/news/insights endpoints consumed by the frontend
-- Optional integrations via API keys (see Environment Variables)
+Backend (Flask):
+- **Portfolio & holdings APIs** with SQLAlchemy models (`User`, `Portfolio`, `Watchlist`).
+- **Insights pipeline:** Yahoo Finance → Finnhub → mock, plus AI JSON analysis.
+- **Market data:** indices overview, stock price, mutual fund price, mutual funds CSV service.
+- **News & Search:** fetch from Finnhub, Azure AI Language sentiment, Azure AI Search indexing, search, suggestions, and facets.
+- **AI services:** OpenRouter-powered chat and personalized investment strategy.
+- **Resilience:** 1-hour symbol cache and configurable CORS.
 
 ## Tech stack
 
@@ -39,6 +50,30 @@ Backend:
 DevOps:
 - Docker + Docker Compose
 - Azure Container Apps deployment script: `scripts/deploy-aca.ps1`
+
+## API Endpoints (selected)
+
+- Portfolio:
+  - `GET /portfolio` — list user holdings
+  - `POST /portfolio` — add/update holdings
+  - `POST /api/holdings/sync` — bulk sync holdings from frontend
+- Insights:
+  - `POST /api/insights` — ticker insights (live/cached/mock + AI JSON)
+  - `POST /investment_strategy` — personalized strategy (OpenRouter)
+- Market Data:
+  - `GET /market-data` — indices overview
+  - `GET /api/stock-price` — current stock price (yfinance)
+  - `GET /api/mutual-fund-price` — mutual fund NAV (yfinance)
+  - `GET /api/mutual-funds` — mutual funds CSV service
+- News & Search:
+  - `GET /news` — market/company news with optional sentiment & indexing
+  - `GET /api/search/news` — full-text search with filters
+  - `GET /api/search/suggestions` — autocomplete suggestions
+  - `GET /api/search/facets` — available facets
+  - `POST /api/search/init` / `/api/search/recreate` — index management
+- AI & Sentiment:
+  - `POST /api/chat` — AI assistant Q&A (OpenRouter)
+  - `POST /api/sentiment/analyze` — single-text sentiment (Azure AI Language)
 
 ## Quickstart (Docker Compose — works on any OS)
 
@@ -169,15 +204,21 @@ npm run dev
 
 ### Backend environment variables
 
-Common keys:
+Core:
 - `DB`: SQLAlchemy connection string (PostgreSQL recommended for multi-user; SQLite works for local dev)
 - `DATABASE_URL`: legacy alias (optional)
 - `CORS_ALLOWED_ORIGINS`: comma-separated list for deployed frontends
 
-Optional integrations:
-- `OPENROUTER_API_KEY`: enables AI chat endpoints
-- `STEADY_API_TOKEN`: enables news integration
-- `FINNHUB_API_KEY`, `TWELVEDATA_API_KEY`, `UPSTOX_ACCESS_TOKEN`, `UPSTOX_INSTRUMENT_MAP`: used by some market data paths
+AI & Data:
+- `OPENROUTER_API_KEY`: enables AI chat, insights, and strategy endpoints
+- `FINNHUB_API_KEY`: enables live market news and data fallbacks
+- `AI_SEARCH_ENDPOINT`, `AI_SEARCH_KEY`: Azure AI Search (index, search, suggestions, facets)
+- `AI_LANGUAGE` (key), `AI_ENDPOINT`: Azure AI Language (news sentiment analysis)
+- `TWELVEDATA_API_KEY` (optional), `UPSTOX_ACCESS_TOKEN`, `UPSTOX_INSTRUMENT_MAP` (optional): future broker/data integrations
+- `STEADY_API_TOKEN` (optional): placeholder for news providers
+
+Frontend build-time:
+- `VITE_API_BASE_URL`: frontend API base URL used at build time
 
 ### Database options
 
@@ -192,6 +233,13 @@ For more details, see `server/DATABASE_SETUP.md` and `server/setup.md`.
 - `npm run preview`: serves the built frontend (default `http://localhost:4173`)
 - `npm run lint`: lints the frontend
 - `npm run server:pycheck`: basic Python syntax check for key backend files
+
+
+
+**Practical Outcomes:**
+- Faster research with unified data and AI insights
+- Clearer decisions with confidence scores and sentiment analysis
+- Tax-aware planning with actionable optimization strategies
 
 ## Deploy (Azure Container Apps)
 
