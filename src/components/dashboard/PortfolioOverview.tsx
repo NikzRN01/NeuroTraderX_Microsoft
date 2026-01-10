@@ -203,38 +203,6 @@ const PortfolioOverview = () => {
               </div>
             </div>
           </div>
-
-          <div className="mt-4 md:mt-0 flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-success" />
-              <span className="text-sm text-muted-foreground">Risk: {portfolioData.riskLevel}</span>
-            </div>
-            <button className="flex items-center gap-1 rounded-full bg-secondary px-3 py-1 text-xs">
-              <AlertCircle className="h-3 w-3" />
-              <span>AI Recommendations</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
-          <button
-            className={timeRangeClass("7 Days")}
-            onClick={() => setSelectedTimeRange("7 Days")}
-          >
-            7 Days
-          </button>
-          <button
-            className={timeRangeClass("14 Days")}
-            onClick={() => setSelectedTimeRange("14 Days")}
-          >
-            14 Days
-          </button>
-          <button
-            className={timeRangeClass("30 Days")}
-            onClick={() => setSelectedTimeRange("30 Days")}
-          >
-            30 Days
-          </button>
         </div>
 
         <LineChart data={chartData} />
