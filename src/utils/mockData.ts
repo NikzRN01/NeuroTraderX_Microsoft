@@ -82,7 +82,7 @@ export const mockMarketData: MarketData = {
     { name: 'Nasdaq', value: 16274.09, change: 130.30, changePercentage: 0.78 },
     { name: 'Dow Jones', value: 38239.98, change: -45.20, changePercentage: -0.12 },
     { name: 'Russell 2000 ', value: 201.30, change: 0.54, changePercentage: 0.27 },
-    { name: 'Nifty 50', value: 22367.45, change: 89.10, changePercentage: 0.42 },
+    { name: 'AAPL 100 (AAPL)', value: 259.35, change: 0.33, changePercentage: 0.12 },
   ],
   trendingStocks: [
     { name: 'NVIDIA', symbol: 'NVDA', value: 907.36, change: 23.45, changePercentage: 2.65 },
