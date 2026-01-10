@@ -225,10 +225,10 @@ const Landing = () => {
           </div>
           <div className="mt-8 pt-6 border-t border-border/30 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              © 2023 NeuroTradeX. All rights reserved.
+              NeuroTraderX uses AI-generated insights and may be inaccurate.
             </div>
             <div className="text-sm text-muted-foreground">
-              Made with ❤️ by Libert-T
+             © 2026 NeuroTradeX. All rights reserved.
             </div>
           </div>
         </div>
